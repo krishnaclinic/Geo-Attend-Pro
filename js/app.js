@@ -14,14 +14,14 @@ const CONFIG = {
   GEOFENCE_RADIUS: 100,
 
   // Get from Firebase Console → Project Settings → General → Your Web App
-  firebaseConfig : {
+  firebaseConfig: {
   apiKey: "AIzaSyBumdDi-oOOAoQauLnQDVHJcvbXvJ4nmu0",
   authDomain: "geo-attend-pro.firebaseapp.com",
   projectId: "geo-attend-pro",
   storageBucket: "geo-attend-pro.firebasestorage.app",
   messagingSenderId: "935757975182",
   appId: "1:935757975182:web:a4f77773d67a02034003df"
-}
+  }
 };
 
 // ============================================
@@ -351,26 +351,63 @@ const Staff = {
     if (!navigator.geolocation) {
       UI.setGeoStatus('unavailable', 'Geolocation not supported'); return;
     }
+
+    // Check permission state first
+    try {
+      const perm = await navigator.permissions.query({ name: 'geolocation' });
+      if (perm.state === 'denied') {
+        UI.setGeoStatus('error', 'Location blocked in browser settings. Enable it for this site.');
+        Staff.updatePunchButtons(); return;
+      }
+      if (perm.state === 'prompt') {
+        UI.setGeoStatus('waiting', 'Your browser will ask for location permission shortly.');
+      }
+    } catch { /* permissions API not supported, proceed anyway */ }
+
     try {
       const pos = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true, timeout: 15000, maximumAge: 0
+          enableHighAccuracy: true, timeout: 20000, maximumAge: 0
         });
       });
+
+      const acc = pos.coords.accuracy;
       STATE.geoPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       STATE.geoDistance = Utils.haversine(
         STATE.geoPosition.lat, STATE.geoPosition.lng,
         STATE.assignedStore.lat, STATE.assignedStore.lng
       );
       STATE.isWithinGeofence = STATE.geoDistance <= CONFIG.GEOFENCE_RADIUS;
-      UI.setGeoStatus(
-        STATE.isWithinGeofence ? 'within' : 'outside',
-        `${STATE.geoDistance.toFixed(1)}m from ${STATE.assignedStore.name}`
-      );
+
+      // Warn if accuracy is too low (IP-based geolocation)
+      if (acc > 500) {
+        UI.setGeoStatus('inaccurate',
+          `Low accuracy (${acc.toFixed(0)}m). Position may be wrong. Move near your store and click Refresh Location.`
+        );
+      } else if (STATE.isWithinGeofence) {
+        UI.setGeoStatus('within', `${STATE.geoDistance.toFixed(1)}m from ${STATE.assignedStore.name}`);
+      } else {
+        UI.setGeoStatus('outside', `${STATE.geoDistance.toFixed(1)}m from ${STATE.assignedStore.name}`);
+      }
     } catch (e) {
-      UI.setGeoStatus('error', e.code === 1 ? 'Location denied. Allow in browser settings.' : 'GPS unavailable');
+      if (e.code === 1) {
+        UI.setGeoStatus('error', 'Location access denied. Go to browser settings → Privacy → Location and allow this site.');
+      } else if (e.code === 2) {
+        UI.setGeoStatus('error', 'GPS unavailable. Go outside or turn on location services.');
+      } else if (e.code === 3) {
+        UI.setGeoStatus('error', 'GPS timed out. Try again or move to an open area.');
+      } else {
+        UI.setGeoStatus('error', 'GPS error: ' + e.message);
+      }
     }
     Staff.updatePunchButtons();
+  },
+
+  async refreshLocation() {
+    STATE.selfieDataUrl = null;
+    STATE.isWithinGeofence = false;
+    UI.setGeoStatus('waiting', 'Refreshing location...');
+    await Staff.checkGeofence();
   },
 
   async openCamera() {
@@ -568,20 +605,37 @@ const UI = {
     const icon = document.getElementById('emp-geo-icon');
     const statusEl = document.getElementById('emp-geo-status');
     const detailEl = document.getElementById('emp-geo-detail');
+    const refreshBtn = document.getElementById('btn-refresh-location');
+    if (!refreshBtn) return;
     if (status === 'within') {
       icon.textContent = '✅';
       statusEl.textContent = '✓ Within geofence';
       statusEl.style.color = 'var(--success)';
+      refreshBtn.classList.add('hidden');
     } else if (status === 'outside') {
       icon.textContent = '❌';
       statusEl.textContent = `✕ ${STATE.geoDistance.toFixed(0)}m away (limit ${CONFIG.GEOFENCE_RADIUS}m)`;
       statusEl.style.color = 'var(--danger)';
+      refreshBtn.classList.remove('hidden');
+    } else if (status === 'inaccurate') {
+      icon.textContent = '⚠️';
+      statusEl.textContent = '⚠ Low accuracy location';
+      statusEl.style.color = 'var(--warning)';
+      refreshBtn.classList.remove('hidden');
+    } else if (status === 'waiting') {
+      icon.textContent = '⏳';
+      statusEl.textContent = 'Requesting GPS...';
+      statusEl.style.color = 'var(--gray-500)';
+      refreshBtn.classList.add('hidden');
     } else if (status === 'no-store') {
       icon.textContent = '⚠️'; statusEl.textContent = 'No store assigned'; statusEl.style.color = 'var(--warning)';
+      refreshBtn.classList.add('hidden');
     } else if (status === 'error') {
       icon.textContent = '⚠️'; statusEl.textContent = 'Location unavailable'; statusEl.style.color = 'var(--warning)';
+      refreshBtn.classList.remove('hidden');
     } else {
       icon.textContent = '⏳'; statusEl.textContent = 'Checking location...'; statusEl.style.color = 'var(--gray-500)';
+      refreshBtn.classList.add('hidden');
     }
     detailEl.textContent = detail || '';
     Staff.updatePunchButtons();
@@ -775,6 +829,7 @@ const App = {
       badge.className = 'badge badge-amber'; badge.textContent = 'Required';
       Staff.openCamera();
     });
+    document.getElementById('btn-refresh-location').addEventListener('click', () => Staff.refreshLocation());
     document.getElementById('btn-punch-in').addEventListener('click', () => Staff.punch('IN'));
     document.getElementById('btn-punch-out').addEventListener('click', () => Staff.punch('OUT'));
     document.getElementById('btn-export-csv').addEventListener('click', () => Admin.exportCSV());
