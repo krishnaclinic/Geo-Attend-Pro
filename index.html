@@ -16,11 +16,13 @@
 </head>
 <body>
 
-  <!-- Loading Overlay -->
-  <div id="loading-overlay" class="hidden">
+  <!-- Loading Overlay (visible by default until auth state resolves) -->
+  <div id="loading-overlay">
     <div class="text-center">
+      <div class="loading-logo">📍</div>
+      <div class="loading-brand">Geo Attend Pro</div>
+      <div class="loading-sub">Verifying your session...</div>
       <div class="spinner"></div>
-      <div class="loading-text">Processing...</div>
     </div>
   </div>
 
@@ -28,7 +30,7 @@
   <div id="toast-container"></div>
 
   <!-- Photo Modal Overlay -->
-  <div id="photo-overlay" class="hidden">
+  <div id="photo-overlay" class="modal-overlay hidden">
     <div class="photo-modal">
       <img id="photo-modal-img" src="" alt="Selfie">
       <div class="photo-info">
@@ -39,22 +41,40 @@
   </div>
 
   <!-- Edit Attendance Modal -->
-  <div id="edit-modal-overlay" class="hidden">
-    <div class="photo-modal" style="max-width:380px;">
-      <div class="p-4">
-        <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:0.5rem;">Edit Attendance</h3>
-        <p class="text-sm" style="color:var(--gray-500);margin-bottom:1rem;" id="edit-modal-desc">—</p>
-        <div class="form-group">
-          <label for="edit-action-select">Action</label>
-          <select id="edit-action-select" class="form-input">
-            <option value="IN">IN (Punched In)</option>
-            <option value="OUT">OUT (Punched Out)</option>
-          </select>
-        </div>
-        <div class="flex gap-2">
-          <button id="btn-save-edit" class="btn btn-primary flex-1">Save</button>
-          <button id="btn-cancel-edit" class="btn btn-ghost">Cancel</button>
-        </div>
+  <div id="edit-modal-overlay" class="modal-overlay hidden">
+    <div class="edit-modal-inner">
+      <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:0.25rem;">Edit Attendance Record</h3>
+      <p class="text-sm" style="color:var(--gray-500);margin-bottom:1.25rem;" id="edit-modal-desc">—</p>
+      <div class="form-group">
+        <label for="edit-action-select">Action</label>
+        <select id="edit-action-select" class="form-input">
+          <option value="IN">IN (Punched In)</option>
+          <option value="OUT">OUT (Punched Out)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="edit-timestamp">Date &amp; Time</label>
+        <input id="edit-timestamp" class="form-input" type="datetime-local">
+      </div>
+      <div class="flex gap-2" style="margin-top:0.5rem;">
+        <button id="btn-save-edit" class="btn btn-primary flex-1">Save Changes</button>
+        <button id="btn-cancel-edit" class="btn btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Popup Modal -->
+  <div id="report-overlay" class="modal-overlay hidden">
+    <div class="report-popup">
+      <div class="report-popup-header">
+        <h3 id="report-popup-title">📅 Monthly Report</h3>
+        <button class="close-btn" id="btn-close-report" title="Close">✕</button>
+      </div>
+      <div class="report-summary-bar" id="report-popup-summary">
+        <strong>Loading...</strong>
+      </div>
+      <div class="report-popup-body" id="report-popup-body">
+        <p class="empty-state">No records</p>
       </div>
     </div>
   </div>
@@ -80,7 +100,7 @@
   <main>
 
     <!-- ====== LOGIN / REGISTER VIEW ====== -->
-    <div id="login-view">
+    <div id="login-view" class="hidden">
       <div class="login-box">
         <div class="login-logo">📍</div>
         <h2>Geo Attend Pro</h2>
@@ -115,7 +135,7 @@
             <input id="reg-password" class="form-input" type="password" placeholder="At least 6 characters" autocomplete="new-password">
           </div>
           <div class="form-group">
-            <label for="reg-confirm">Confirm Password</label>
+            <label for="reg-confirm">Password</label>
             <input id="reg-confirm" class="form-input" type="password" placeholder="Repeat password">
           </div>
           <button id="btn-register" class="btn btn-success btn-block btn-lg">Create Account</button>
@@ -137,7 +157,7 @@
           </div>
           <span id="emp-status-dot" class="status-dot"></span>
         </div>
-        <hr style="border:none;border-top:1px solid var(--gray-100);margin:0.75rem 0;">
+        <hr style="border:none;border-top:1px solid var(--white-border);margin:0.75rem 0;">
         <div class="card-label">Work Status</div>
         <div class="status-text status-text-idle" id="emp-status-text">Shift Not Started</div>
         <div class="status-time" id="emp-trusted-time">—</div>
@@ -223,6 +243,90 @@
         </div>
       </div>
 
+      <!-- Records Management -->
+      <div class="card p-4 section">
+        <div class="card-header">
+          <div class="card-title">📊 Records Management</div>
+          <div class="flex gap-2">
+            <button id="btn-export-csv" class="btn btn-sm btn-ghost">Export CSV</button>
+          </div>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div class="filter-row">
+          <div class="filter-group">
+            <label>From</label>
+            <input id="filter-date-from" class="filter-input" type="date">
+          </div>
+          <div class="filter-group">
+            <label>To</label>
+            <input id="filter-date-to" class="filter-input" type="date">
+          </div>
+          <div class="filter-group">
+            <label>Staff</label>
+            <select id="filter-staff" class="filter-input">
+              <option value="">All Staff</option>
+            </select>
+          </div>
+          <button id="btn-apply-filter" class="btn btn-sm btn-primary">Apply</button>
+          <button id="btn-clear-filter" class="btn btn-sm btn-ghost">Clear</button>
+          <span id="filter-result-count" class="text-xs" style="color:var(--gray-400);align-self:center;margin-left:auto;"></span>
+        </div>
+
+        <!-- Monthly Report Controls -->
+        <div class="filter-row" style="background:rgba(99,102,241,0.04);border-color:var(--white-border-strong);">
+          <span style="font-size:0.8125rem;font-weight:600;color:var(--gray-600);align-self:center;">📅 Monthly Report</span>
+          <div class="filter-group">
+            <label>Month</label>
+            <select id="report-month" class="filter-input">
+              <option value="01">January</option>
+              <option value="02">February</option>
+              <option value="03">March</option>
+              <option value="04">April</option>
+              <option value="05">May</option>
+              <option value="06">June</option>
+              <option value="07">July</option>
+              <option value="08">August</option>
+              <option value="09">September</option>
+              <option value="10">October</option>
+              <option value="11">November</option>
+              <option value="12">December</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Year</label>
+            <select id="report-year" class="filter-input"></select>
+          </div>
+          <div class="filter-group">
+            <label>Staff</label>
+            <select id="report-staff" class="filter-input">
+              <option value="">All Staff</option>
+            </select>
+          </div>
+          <button id="btn-generate-report" class="btn btn-sm btn-success">Generate</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Photo</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Action</th>
+                <th>Store</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="admin-attendance-body">
+              <tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Stores -->
       <div class="card p-4 section">
         <div class="card-header">
@@ -269,99 +373,6 @@
         </div>
       </div>
 
-      <!-- Records Management -->
-      <div class="card p-4 section">
-        <div class="card-header">
-          <div class="card-title">📊 Records Management</div>
-          <div class="flex gap-2">
-            <button id="btn-export-csv" class="btn btn-sm btn-ghost">Export CSV</button>
-          </div>
-        </div>
-
-        <!-- Date Range Filter -->
-        <div class="filter-row">
-          <div class="filter-group">
-            <label>From</label>
-            <input id="filter-date-from" class="filter-input" type="date">
-          </div>
-          <div class="filter-group">
-            <label>To</label>
-            <input id="filter-date-to" class="filter-input" type="date">
-          </div>
-          <div class="filter-group">
-            <label>Staff</label>
-            <select id="filter-staff" class="filter-input">
-              <option value="">All Staff</option>
-            </select>
-          </div>
-          <button id="btn-apply-filter" class="btn btn-sm btn-primary">Apply</button>
-          <button id="btn-clear-filter" class="btn btn-sm btn-ghost">Clear</button>
-          <span id="filter-result-count" class="text-xs" style="color:var(--gray-400);align-self:center;margin-left:auto;"></span>
-        </div>
-
-        <!-- Monthly Report Controls -->
-        <div class="filter-row" style="background:var(--gray-100);border-color:var(--gray-200);">
-          <span style="font-size:0.8125rem;font-weight:600;color:var(--gray-600);align-self:center;">📅 Monthly Report</span>
-          <div class="filter-group">
-            <label>Month</label>
-            <select id="report-month" class="filter-input">
-              <option value="01">January</option>
-              <option value="02">February</option>
-              <option value="03">March</option>
-              <option value="04">April</option>
-              <option value="05">May</option>
-              <option value="06">June</option>
-              <option value="07">July</option>
-              <option value="08">August</option>
-              <option value="09">September</option>
-              <option value="10">October</option>
-              <option value="11">November</option>
-              <option value="12">December</option>
-            </select>
-          </div>
-          <div class="filter-group">
-            <label>Year</label>
-            <select id="report-year" class="filter-input"></select>
-          </div>
-          <div class="filter-group">
-            <label>Staff</label>
-            <select id="report-staff" class="filter-input">
-              <option value="">All Staff</option>
-            </select>
-          </div>
-          <button id="btn-generate-report" class="btn btn-sm btn-success">Generate</button>
-          <span id="report-result-count" class="text-xs" style="color:var(--gray-400);align-self:center;"></span>
-        </div>
-
-        <!-- Monthly Report Summary -->
-        <div id="monthly-summary" class="hidden" style="background:#eef2ff;border-radius:var(--radius-sm);padding:0.75rem 1rem;margin-bottom:0.75rem;border:1px solid #c7d2fe;">
-          <div class="flex items-center gap-3 flex-wrap">
-            <span id="summary-title" style="font-weight:700;font-size:0.9375rem;color:var(--primary-dark);"></span>
-            <span id="summary-details" style="font-size:0.8125rem;color:var(--gray-500);"></span>
-            <button id="btn-clear-report" class="btn btn-sm btn-ghost ml-auto">✕ Clear Report</button>
-          </div>
-        </div>
-
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Photo</th>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Action</th>
-                <th>Store</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="admin-attendance-body">
-              <tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
 
   </main>
