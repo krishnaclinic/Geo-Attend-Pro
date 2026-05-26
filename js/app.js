@@ -14,13 +14,13 @@ const CONFIG = {
 
   // Get this from Firebase Console → Project Settings → General → Your apps → Web app
   firebaseConfig = {
-    apiKey: "AIzaSyBumdDi-oOOAoQauLnQDVHJcvbXvJ4nmu0",
-    authDomain: "geo-attend-pro.firebaseapp.com",
-    projectId: "geo-attend-pro",
-    storageBucket: "geo-attend-pro.firebasestorage.app",
-    messagingSenderId: "935757975182",
-    appId: "1:935757975182:web:a4f77773d67a02034003df"
-  }
+  apiKey: "AIzaSyBumdDi-oOOAoQauLnQDVHJcvbXvJ4nmu0",
+  authDomain: "geo-attend-pro.firebaseapp.com",
+  projectId: "geo-attend-pro",
+  storageBucket: "geo-attend-pro.firebasestorage.app",
+  messagingSenderId: "935757975182",
+  appId: "1:935757975182:web:a4f77773d67a02034003df"
+}
 };
 
 // ============================================
