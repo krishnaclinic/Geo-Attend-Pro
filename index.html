@@ -27,6 +27,38 @@
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
+  <!-- Photo Modal Overlay -->
+  <div id="photo-overlay" class="hidden">
+    <div class="photo-modal">
+      <img id="photo-modal-img" src="" alt="Selfie">
+      <div class="photo-info">
+        <span id="photo-modal-info">—</span>
+        <button id="btn-close-photo" class="btn btn-sm btn-ghost">✕ Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Attendance Modal -->
+  <div id="edit-modal-overlay" class="hidden">
+    <div class="photo-modal" style="max-width:380px;">
+      <div class="p-4">
+        <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:0.5rem;">Edit Attendance</h3>
+        <p class="text-sm" style="color:var(--gray-500);margin-bottom:1rem;" id="edit-modal-desc">—</p>
+        <div class="form-group">
+          <label for="edit-action-select">Action</label>
+          <select id="edit-action-select" class="form-input">
+            <option value="IN">IN (Punched In)</option>
+            <option value="OUT">OUT (Punched Out)</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button id="btn-save-edit" class="btn btn-primary flex-1">Save</button>
+          <button id="btn-cancel-edit" class="btn btn-ghost">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Header -->
   <header>
     <div class="header-inner">
@@ -36,6 +68,7 @@
       </div>
       <div id="user-area" class="hidden">
         <span id="user-email"></span>
+        <span id="user-role-badge" class="user-badge"></span>
         <button id="btn-switch-admin" class="btn btn-sm btn-primary hidden">Admin</button>
         <button id="btn-switch-employee" class="btn btn-sm btn-primary hidden">Staff</button>
         <button id="btn-logout" class="btn btn-sm btn-danger">Logout</button>
@@ -49,7 +82,7 @@
     <!-- ====== LOGIN / REGISTER VIEW ====== -->
     <div id="login-view">
       <div class="login-box">
-        <div style="font-size:3rem;margin-bottom:0.75rem;">📍</div>
+        <div class="login-logo">📍</div>
         <h2>Geo Attend Pro</h2>
         <p>GPS-based staff attendance with geofencing</p>
 
@@ -108,6 +141,7 @@
         <div class="card-label">Work Status</div>
         <div class="status-text status-text-idle" id="emp-status-text">Shift Not Started</div>
         <div class="status-time" id="emp-trusted-time">—</div>
+        <div id="emp-hours-today" class="text-sm mt-1" style="color:var(--gray-400);display:none;"></div>
       </div>
 
       <!-- Geofence Card -->
@@ -129,7 +163,7 @@
           <div class="card-title" style="font-size:1rem;">📸 Selfie Verification</div>
           <span id="selfie-badge" class="badge badge-amber">Required</span>
         </div>
-        <div id="selfie-preview-area" class="hidden" style="display:flex;justify-content:center;margin-bottom:0.75rem;">
+        <div id="selfie-preview-area" class="hidden text-center mb-3">
           <img id="selfie-preview-img" class="selfie-preview-img" alt="Selfie">
         </div>
         <video id="selfie-video" class="hidden" autoplay playsinline></video>
@@ -159,6 +193,7 @@
       <div class="card p-4">
         <div class="card-header">
           <div class="card-title">📋 Today's History</div>
+          <span id="today-count-badge" class="badge badge-blue hidden">0 records</span>
         </div>
         <div id="attendance-history">
           <p class="empty-state">No records for today</p>
@@ -172,14 +207,17 @@
       <!-- Stats -->
       <div class="stats-grid">
         <div class="stat-card">
+          <div class="stat-icon">👤</div>
           <div class="stat-number" id="stat-today">0</div>
           <div class="stat-label">Today Present</div>
         </div>
         <div class="stat-card">
+          <div class="stat-icon">🏪</div>
           <div class="stat-number" id="stat-stores">0</div>
           <div class="stat-label">Stores</div>
         </div>
         <div class="stat-card">
+          <div class="stat-icon">👥</div>
           <div class="stat-number" id="stat-employees">0</div>
           <div class="stat-label">Employees</div>
         </div>
@@ -235,21 +273,41 @@
       <div class="card p-4 section">
         <div class="card-header">
           <div class="card-title">📊 All Attendance</div>
-          <button id="btn-export-csv" class="btn btn-sm btn-ghost">Export CSV</button>
+          <div class="flex gap-2">
+            <button id="btn-export-csv" class="btn btn-sm btn-ghost">Export CSV</button>
+          </div>
         </div>
-        <div style="overflow-x:auto;">
+
+        <!-- Date Filter -->
+        <div class="filter-row">
+          <div class="filter-group">
+            <label>From</label>
+            <input id="filter-date-from" class="filter-input" type="date">
+          </div>
+          <div class="filter-group">
+            <label>To</label>
+            <input id="filter-date-to" class="filter-input" type="date">
+          </div>
+          <button id="btn-apply-filter" class="btn btn-sm btn-primary">Apply</button>
+          <button id="btn-clear-filter" class="btn btn-sm btn-ghost">Clear</button>
+          <span id="filter-result-count" class="text-xs" style="color:var(--gray-400);align-self:center;margin-left:auto;"></span>
+        </div>
+
+        <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
+                <th>Photo</th>
                 <th>Date</th>
                 <th>Time</th>
-                <th>Email</th>
+                <th>Name</th>
                 <th>Action</th>
                 <th>Store</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="admin-attendance-body">
-              <tr><td colspan="5" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>
+              <tr><td colspan="7" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>
             </tbody>
           </table>
         </div>
