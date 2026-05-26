@@ -10,18 +10,18 @@
 // SECTION 1: CONFIG
 // ============================================
 const CONFIG = {
-  OWNER_EMAIL: 'krishnahospitalsapotra@gmail.com',
+  OWNER_EMAIL: 'admin@company.com',
   GEOFENCE_RADIUS: 150,
 
   // Get from Firebase Console → Project Settings → General → Your Web App
-  firebaseConfig = {
-  apiKey: "AIzaSyBumdDi-oOOAoQauLnQDVHJcvbXvJ4nmu0",
-  authDomain: "geo-attend-pro.firebaseapp.com",
-  projectId: "geo-attend-pro",
-  storageBucket: "geo-attend-pro.firebasestorage.app",
-  messagingSenderId: "935757975182",
-  appId: "1:935757975182:web:a4f77773d67a02034003df"
-}
+  firebaseConfig: {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  }
 };
 
 // ============================================
@@ -132,6 +132,7 @@ const Utils = {
 // ============================================
 const Auth = {
   async login() {
+    if (!Firebase.auth) { Utils.showToast('Firebase not initialized. Check config.', 'error'); return; }
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
     if (!email || !password) { Utils.showToast('Enter email and password', 'warning'); return; }
@@ -157,6 +158,7 @@ const Auth = {
     if (!name || !email || !password) { Utils.showToast('Fill all fields', 'warning'); return; }
     if (password.length < 6) { Utils.showToast('Password must be at least 6 characters', 'warning'); return; }
     if (password !== confirm) { Utils.showToast('Passwords do not match', 'warning'); return; }
+    if (!Firebase.auth) { Utils.showToast('Firebase not initialized. Check config.', 'error'); return; }
     Utils.showLoading();
     try {
       const cred = await Firebase.auth.createUserWithEmailAndPassword(email, password);
@@ -676,7 +678,13 @@ const UI = {
 // ============================================
 const App = {
   init() {
-    // Verify config has been set before starting Firebase
+    // Bind events FIRST so buttons always respond
+    this.bindEvents();
+
+    // Safety: auto-hide loading overlay after 15s if it gets stuck
+    setTimeout(() => document.getElementById('loading-overlay').classList.add('hidden'), 15000);
+
+    // Verify config has been set
     if (CONFIG.firebaseConfig.apiKey === 'YOUR_API_KEY' || CONFIG.firebaseConfig.apiKey.length < 10) {
       document.querySelector('.login-box h2').textContent = '⚠️ Configuration Required';
       document.querySelector('.login-box > p').innerHTML =
@@ -690,9 +698,16 @@ const App = {
       return;
     }
 
-    // Init Firebase
-    Firebase.init();
-    this.bindEvents();
+    // Init Firebase (wrapped so init errors don't break the app)
+    try {
+      Firebase.init();
+    } catch (e) {
+      console.error('Firebase init error:', e);
+      document.getElementById('login-form').innerHTML =
+        '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:1rem;text-align:left;font-size:0.8125rem;">' +
+        '<p style="font-weight:600;color:#991b1b;margin-bottom:0.5rem;">❌ Firebase initialization failed</p>' +
+        '<p style="color:#b91c1c;line-height:1.5;">' + e.message + '</p></div>';
+    }
   },
 
   bindEvents() {
@@ -823,4 +838,7 @@ const App = {
   }
 };
 
-document.addEventListener('DOMContentLoaded', () => App.init());
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('Geo Attend Pro: loaded');
+  App.init();
+});
