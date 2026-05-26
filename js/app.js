@@ -237,7 +237,7 @@ const DB = {
           STATE.employeeRecord = STATE.employees.find(e => e.email?.toLowerCase() === STATE.firebaseUser.email.toLowerCase());
           STATE.isRegistered = !!STATE.employeeRecord;
         }
-        if (STATE.view === 'admin') { UI.renderEmployees(); Admin.updateStats(); UI.populateStoreDropdown(); }
+        if (STATE.view === 'admin') { UI.renderEmployees(); Admin.updateStats(); UI.populateStoreDropdown(); UI.populateStaffDropdowns(); }
         if (STATE.view === 'employee') UI.renderEmployeeView();
       }, err => {
         if (err.code === 'permission-denied') Utils.showToast('Permission denied. Check Firestore rules.', 'error');
@@ -384,6 +384,30 @@ const DB = {
       DB.loadAllAttendance();
     } catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
     finally { Utils.hideLoading(); }
+  },
+
+  async loadMonthlyReport(year, month, staffEmail) {
+    const startDate = `${year}-${month}-01`;
+    const lastDay = new Date(year, parseInt(month), 0).getDate();
+    const endDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+    Utils.showLoading();
+    try {
+      const snap = await Firebase.db.collection('attendance')
+        .where('date', '>=', startDate)
+        .where('date', '<=', endDate)
+        .get();
+      let records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (staffEmail) records = records.filter(r => r.email === staffEmail);
+      records.sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
+      STATE.attendance = records;
+      STATE.filterActive = true;
+      document.getElementById('filter-date-from').value = startDate;
+      document.getElementById('filter-date-to').value = endDate;
+      document.getElementById('filter-staff').value = staffEmail || '';
+      if (STATE.view === 'admin') UI.renderMonthlyReport(records, staffEmail, year, month);
+    } catch (e) {
+      Utils.showToast('Failed: ' + e.message, 'error');
+    } finally { Utils.hideLoading(); }
   }
 };
 
@@ -595,6 +619,8 @@ const Admin = {
     UI.renderEmployees();
     await DB.loadAllAttendance();
     UI.populateStoreDropdown();
+    UI.populateYearDropdown();
+    UI.populateStaffDropdowns();
   },
 
   updateStats() {
@@ -786,20 +812,20 @@ const UI = {
   renderAdminAttendance() {
     const body = document.getElementById('admin-attendance-body');
 
-    // Apply client-side filter
     const from = document.getElementById('filter-date-from').value;
     const to = document.getElementById('filter-date-to').value;
+    const staffEmail = document.getElementById('filter-staff').value;
     let filtered = STATE.attendance;
     if (from) filtered = filtered.filter(r => r.date >= from);
     if (to) filtered = filtered.filter(r => r.date <= to);
-    STATE.filterActive = !!(from || to);
+    if (staffEmail) filtered = filtered.filter(r => r.email === staffEmail);
+    STATE.filterActive = !!(from || to || staffEmail);
 
-    // Update count
     const countEl = document.getElementById('filter-result-count');
     countEl.textContent = `${filtered.length} of ${STATE.attendance.length} records`;
 
     if (filtered.length === 0) {
-      body.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>'; return;
+      body.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>'; return;
     }
 
     body.innerHTML = filtered.map(r => {
@@ -814,9 +840,10 @@ const UI = {
         </td>
         <td>${r.date}</td>
         <td>${Utils.formatTime(r.timestamp)}</td>
-        <td>${r.name || r.email}</td>
+        <td>${r.name || '—'}</td>
+        <td style="font-size:0.75rem;color:var(--gray-400);">${r.email || '—'}</td>
         <td><span style="color:${actionColor};font-weight:600;">${r.action}</span></td>
-        <td>${r.storeName || ''}</td>
+        <td>${r.storeName || '—'}</td>
         <td>
           <div class="flex gap-1" style="flex-wrap:nowrap;">
             ${hasPhoto ? `<button class="btn action-btn btn-outline view-photo-btn" data-id="${r.id}" title="View selfie">📷</button>` : ''}
@@ -876,8 +903,73 @@ const UI = {
   clearFilter() {
     document.getElementById('filter-date-from').value = '';
     document.getElementById('filter-date-to').value = '';
+    document.getElementById('filter-staff').value = '';
+    document.getElementById('monthly-summary').classList.add('hidden');
+    document.getElementById('report-result-count').textContent = '';
     STATE.filterActive = false;
-    if (STATE.view === 'admin') UI.renderAdminAttendance();
+    DB.loadAllAttendance();
+  },
+
+  populateStaffDropdowns() {
+    const selects = ['filter-staff', 'report-staff'];
+    selects.forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const val = sel.value;
+      sel.innerHTML = '<option value="">All Staff</option>';
+      STATE.employees.forEach(e => {
+        const o = document.createElement('option');
+        o.value = e.email; o.textContent = `${e.name} (${e.email})`;
+        sel.appendChild(o);
+      });
+      if (val) sel.value = val;
+    });
+  },
+
+  populateYearDropdown() {
+    const sel = document.getElementById('report-year');
+    if (!sel) return;
+    const current = new Date().getFullYear();
+    sel.innerHTML = '';
+    for (let y = current - 2; y <= current + 1; y++) {
+      const o = document.createElement('option');
+      o.value = y; o.textContent = y;
+      if (y === current) o.selected = true;
+      sel.appendChild(o);
+    }
+  },
+
+  renderMonthlyReport(records, staffEmail, year, month) {
+    const summaryEl = document.getElementById('monthly-summary');
+    summaryEl.classList.remove('hidden');
+
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthName = monthNames[parseInt(month) - 1];
+
+    const uniqueStaff = new Set(records.map(r => r.email)).size;
+    const inCount = records.filter(r => r.action === 'IN').length;
+    const outCount = records.filter(r => r.action === 'OUT').length;
+
+    const staffName = staffEmail
+      ? (STATE.employees.find(e => e.email === staffEmail)?.name || staffEmail)
+      : 'All Staff';
+
+    document.getElementById('summary-title').textContent = `📅 ${monthName} ${year} — ${staffName}`;
+    document.getElementById('summary-details').textContent =
+      `${records.length} records · ${uniqueStaff} employee(s) · ${inCount} IN · ${outCount} OUT`;
+    document.getElementById('report-result-count').textContent = `${records.length} records found`;
+
+    STATE.filterActive = true;
+    UI.renderAdminAttendance();
+  },
+
+  clearReport() {
+    document.getElementById('monthly-summary').classList.add('hidden');
+    document.getElementById('report-result-count').textContent = '';
+    document.getElementById('filter-date-from').value = '';
+    document.getElementById('filter-date-to').value = '';
+    document.getElementById('filter-staff').value = '';
+    DB.loadAllAttendance();
   }
 };
 
@@ -1010,6 +1102,16 @@ const App = {
     // Filter
     document.getElementById('btn-apply-filter').addEventListener('click', () => UI.applyFilter());
     document.getElementById('btn-clear-filter').addEventListener('click', () => UI.clearFilter());
+
+    // Monthly Report
+    document.getElementById('btn-generate-report').addEventListener('click', () => {
+      const year = document.getElementById('report-year').value;
+      const month = document.getElementById('report-month').value;
+      const staffEmail = document.getElementById('report-staff').value;
+      if (!year || !month) { Utils.showToast('Select month and year', 'warning'); return; }
+      DB.loadMonthlyReport(year, month, staffEmail || null);
+    });
+    document.getElementById('btn-clear-report').addEventListener('click', () => UI.clearReport());
 
     // Delegated events for attendance table
     document.getElementById('admin-attendance-body').addEventListener('click', e => {
