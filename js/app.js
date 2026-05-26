@@ -11,7 +11,7 @@
 // ============================================
 const CONFIG = {
   OWNER_EMAIL: 'krishnahospitalsapotra@gmail.com',
-  GEOFENCE_RADIUS: 50,
+  GEOFENCE_RADIUS: 100,
 
   // Get from Firebase Console → Project Settings → General → Your Web App
   firebaseConfig: {
@@ -426,8 +426,15 @@ const Staff = {
 
   updateStatus() {
     if (STATE.todayAttendance.length === 0) { STATE.currentStatus = 'none'; return; }
-    const last = STATE.todayAttendance[STATE.todayAttendance.length - 1];
-    STATE.currentStatus = last.action === 'IN' ? 'clocked_in' : 'clocked_out';
+    const hasIn = STATE.todayAttendance.some(r => r.action === 'IN');
+    const hasOut = STATE.todayAttendance.some(r => r.action === 'OUT');
+    if (!hasIn) {
+      STATE.currentStatus = 'none';
+    } else if (hasIn && !hasOut) {
+      STATE.currentStatus = 'clocked_in';
+    } else {
+      STATE.currentStatus = 'clocked_out';
+    }
   },
 
   async checkGeofence() {
@@ -546,8 +553,18 @@ const Staff = {
 
   updatePunchButtons() {
     const canPunch = STATE.isWithinGeofence && STATE.selfieDataUrl;
-    document.getElementById('btn-punch-in').disabled = !canPunch;
-    document.getElementById('btn-punch-out').disabled = !canPunch;
+    const btnIn = document.getElementById('btn-punch-in');
+    const btnOut = document.getElementById('btn-punch-out');
+    if (STATE.currentStatus === 'none') {
+      btnIn.disabled = !canPunch;
+      btnOut.disabled = true;
+    } else if (STATE.currentStatus === 'clocked_in') {
+      btnIn.disabled = true;
+      btnOut.disabled = !canPunch;
+    } else {
+      btnIn.disabled = true;
+      btnOut.disabled = true;
+    }
   },
 
   async punch(action) {
