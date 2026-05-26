@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geo Attend Pro — Staff Attendance</title>
+  <meta name="description" content="GPS-based staff attendance with Firebase backend">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📍</text></svg>">
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-storage-compat.js"></script>
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="hidden">
+    <div class="text-center">
+      <div class="spinner"></div>
+      <div class="loading-text">Processing...</div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">📍</span>
+        <span>Geo Attend Pro</span>
+      </div>
+      <div id="user-area" class="hidden">
+        <span id="user-email"></span>
+        <button id="btn-switch-admin" class="btn btn-sm btn-primary hidden">Admin</button>
+        <button id="btn-switch-employee" class="btn btn-sm btn-primary hidden">Staff</button>
+        <button id="btn-logout" class="btn btn-sm btn-danger">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main>
+
+    <!-- ====== LOGIN / REGISTER VIEW ====== -->
+    <div id="login-view">
+      <div class="login-box">
+        <div style="font-size:3rem;margin-bottom:0.75rem;">📍</div>
+        <h2>Geo Attend Pro</h2>
+        <p>GPS-based staff attendance with geofencing</p>
+
+        <!-- Login Form -->
+        <div id="login-form">
+          <div class="form-group">
+            <label for="login-email">Email</label>
+            <input id="login-email" class="form-input" type="email" placeholder="you@company.com" autocomplete="email">
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input id="login-password" class="form-input" type="password" placeholder="••••••" autocomplete="current-password">
+          </div>
+          <button id="btn-login" class="btn btn-primary btn-block btn-lg">Sign In</button>
+          <p class="auth-toggle">Don't have an account? <a href="#" id="link-show-register">Register</a></p>
+        </div>
+
+        <!-- Register Form -->
+        <div id="register-form" class="hidden">
+          <div class="form-group">
+            <label for="reg-name">Full Name</label>
+            <input id="reg-name" class="form-input" type="text" placeholder="John Doe">
+          </div>
+          <div class="form-group">
+            <label for="reg-email">Email</label>
+            <input id="reg-email" class="form-input" type="email" placeholder="you@company.com" autocomplete="email">
+          </div>
+          <div class="form-group">
+            <label for="reg-password">Password</label>
+            <input id="reg-password" class="form-input" type="password" placeholder="At least 6 characters" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label for="reg-confirm">Confirm Password</label>
+            <input id="reg-confirm" class="form-input" type="password" placeholder="Repeat password">
+          </div>
+          <button id="btn-register" class="btn btn-success btn-block btn-lg">Create Account</button>
+          <p class="auth-toggle">Already have an account? <a href="#" id="link-show-login">Sign In</a></p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ====== EMPLOYEE VIEW ====== -->
+    <div id="employee-view" class="view hidden">
+
+      <!-- Store & Status Card -->
+      <div class="card p-4">
+        <div class="status-header">
+          <div>
+            <div class="card-label">Assigned Store</div>
+            <div class="card-value" id="emp-store">—</div>
+          </div>
+          <span id="emp-status-dot" class="status-dot"></span>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--gray-100);margin:0.75rem 0;">
+        <div class="card-label">Work Status</div>
+        <div class="status-text status-text-idle" id="emp-status-text">Shift Not Started</div>
+        <div class="status-time" id="emp-trusted-time">—</div>
+      </div>
+
+      <!-- Geofence Card -->
+      <div class="card p-4">
+        <div class="flex items-center gap-3">
+          <span class="geo-status-icon" id="emp-geo-icon">📍</span>
+          <div class="flex-1">
+            <div class="card-label">Geofence</div>
+            <div class="card-value" id="emp-geo-status" style="color:var(--gray-500);">Checking location...</div>
+          </div>
+        </div>
+        <div class="geo-detail" id="emp-geo-detail">Acquiring GPS signal...</div>
+      </div>
+
+      <!-- Selfie Card -->
+      <div class="card p-4">
+        <div class="flex items-center justify-between mb-2">
+          <div class="card-title" style="font-size:1rem;">📸 Selfie Verification</div>
+          <span id="selfie-badge" class="badge badge-amber">Required</span>
+        </div>
+        <div id="selfie-preview-area" class="hidden" style="display:flex;justify-content:center;margin-bottom:0.75rem;">
+          <img id="selfie-preview-img" class="selfie-preview-img" alt="Selfie">
+        </div>
+        <video id="selfie-video" class="hidden" autoplay playsinline></video>
+        <canvas id="selfie-canvas" class="hidden"></canvas>
+        <div class="flex gap-2 flex-wrap">
+          <button id="btn-open-camera" class="btn btn-primary flex-1">📷 Open Camera</button>
+          <button id="btn-capture-selfie" class="btn btn-success hidden flex-1">Capture</button>
+          <button id="btn-retake-selfie" class="btn btn-ghost hidden">Retake</button>
+        </div>
+      </div>
+
+      <!-- Punch Buttons -->
+      <div class="punch-row">
+        <button id="btn-punch-in" class="punch-btn punch-in" disabled>Punch In</button>
+        <button id="btn-punch-out" class="punch-btn punch-out" disabled>Punch Out</button>
+      </div>
+
+      <!-- Offline Status Note -->
+      <div id="offline-bar" class="offline-bar hidden">
+        <div>
+          <p>📶 Working Offline</p>
+          <div class="count" id="offline-count">Firestore will sync when online</div>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div class="card p-4">
+        <div class="card-header">
+          <div class="card-title">📋 Today's History</div>
+        </div>
+        <div id="attendance-history">
+          <p class="empty-state">No records for today</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== ADMIN VIEW ====== -->
+    <div id="admin-view" class="view hidden">
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number" id="stat-today">0</div>
+          <div class="stat-label">Today Present</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-stores">0</div>
+          <div class="stat-label">Stores</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-employees">0</div>
+          <div class="stat-label">Employees</div>
+        </div>
+      </div>
+
+      <!-- Stores -->
+      <div class="card p-4 section">
+        <div class="card-header">
+          <div class="card-title">🏪 Stores</div>
+          <button id="btn-show-store-form" class="btn btn-primary btn-sm">+ Add</button>
+        </div>
+        <div id="store-form-area" class="hidden">
+          <div class="form-row">
+            <input id="input-store-name" class="form-input" placeholder="Store Name">
+            <input id="input-store-lat" class="form-input" placeholder="Latitude" type="number" step="any">
+            <input id="input-store-lng" class="form-input" placeholder="Longitude" type="number" step="any">
+          </div>
+          <div class="form-actions">
+            <button id="btn-save-store" class="btn btn-success">Save</button>
+            <button id="btn-cancel-store" class="btn btn-ghost">Cancel</button>
+          </div>
+        </div>
+        <div id="store-list" class="mt-2">
+          <p class="empty-state">No stores yet. Add one above.</p>
+        </div>
+      </div>
+
+      <!-- Employees -->
+      <div class="card p-4 section">
+        <div class="card-header">
+          <div class="card-title">👥 Employees</div>
+          <button id="btn-show-emp-form" class="btn btn-primary btn-sm">+ Add</button>
+        </div>
+        <div id="emp-form-area" class="hidden">
+          <div class="form-row">
+            <input id="input-emp-name" class="form-input" placeholder="Full Name">
+            <input id="input-emp-email" class="form-input" placeholder="Email" type="email">
+            <select id="input-emp-store" class="form-input">
+              <option value="">Select Store</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button id="btn-save-emp" class="btn btn-success">Save</button>
+            <button id="btn-cancel-emp" class="btn btn-ghost">Cancel</button>
+          </div>
+        </div>
+        <div id="emp-list" class="mt-2">
+          <p class="empty-state">No employees yet. Add one above.</p>
+        </div>
+      </div>
+
+      <!-- Attendance Records -->
+      <div class="card p-4 section">
+        <div class="card-header">
+          <div class="card-title">📊 All Attendance</div>
+          <button id="btn-export-csv" class="btn btn-sm btn-ghost">Export CSV</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Email</th>
+                <th>Action</th>
+                <th>Store</th>
+              </tr>
+            </thead>
+            <tbody id="admin-attendance-body">
+              <tr><td colspan="5" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
