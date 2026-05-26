@@ -50,6 +50,9 @@ const STATE = {
   editingStoreId: null,
   editingEmpEmail: null,
 
+  editingAttendanceId: null,
+  filterActive: false,
+
   unsubStores: null,
   unsubEmployees: null,
   unsubAttendance: null
@@ -119,11 +122,33 @@ const Utils = {
     return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
   },
 
+  formatDate(ts) {
+    const d = ts?.toMillis ? new Date(ts.toMillis()) : new Date(ts);
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  },
+
   getDeviceInfo() { return navigator.userAgent.substring(0, 120); },
 
   getStoreName(storeId) {
     const s = STATE.stores.find(x => x.id === storeId);
     return s ? s.name : '—';
+  },
+
+  getTodayCount() {
+    return new Set(STATE.todayAttendance.filter(r => r.action === 'IN').map(r => r.email)).size;
+  },
+
+  msToHours(ms) {
+    if (ms <= 0) return '0m';
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  },
+
+  formatTimestamp(ts) {
+    if (!ts) return '—';
+    return `${Utils.formatDate(ts)} ${Utils.formatTime(ts)}`;
   }
 };
 
@@ -225,12 +250,13 @@ const DB = {
         .where('date', '==', today)
         .orderBy('timestamp', 'asc')
         .onSnapshot(snapshot => {
-          STATE.todayAttendance = snapshot.docs.map(d => d.data());
+          STATE.todayAttendance = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
           STATE.todayAttendance.sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
           if (STATE.view === 'employee') {
             Staff.updateStatus();
             UI.renderEmployeeView();
           }
+          if (STATE.view === 'admin') Admin.updateStats();
         }, err => {
           if (err.code === 'failed-precondition') {
             const match = err.message?.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
@@ -329,11 +355,35 @@ const DB = {
     try {
       const snap = await Firebase.db.collection('attendance')
         .orderBy('timestamp', 'desc')
-        .limit(200)
+        .limit(500)
         .get();
-      STATE.attendance = snap.docs.map(d => d.data());
+      STATE.attendance = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      STATE.filterActive = false;
       if (STATE.view === 'admin') UI.renderAdminAttendance();
     } catch { STATE.attendance = []; }
+  },
+
+  async deleteAttendance(id) {
+    if (!confirm('Delete this attendance record?')) return;
+    Utils.showLoading();
+    try {
+      await Firebase.db.collection('attendance').doc(id).delete();
+      Utils.showToast('Record deleted ✓');
+      DB.loadAllAttendance();
+    } catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
+    finally { Utils.hideLoading(); }
+  },
+
+  async updateAttendance(id, newAction) {
+    Utils.showLoading();
+    try {
+      await Firebase.db.collection('attendance').doc(id).update({ action: newAction });
+      Utils.showToast('Record updated ✓');
+      document.getElementById('edit-modal-overlay').classList.add('hidden');
+      STATE.editingAttendanceId = null;
+      DB.loadAllAttendance();
+    } catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
+    finally { Utils.hideLoading(); }
   }
 };
 
@@ -361,7 +411,6 @@ const Staff = {
       UI.setGeoStatus('unavailable', 'Geolocation not supported'); return;
     }
 
-    // Check permission state first
     try {
       const perm = await navigator.permissions.query({ name: 'geolocation' });
       if (perm.state === 'denied') {
@@ -388,7 +437,6 @@ const Staff = {
       );
       STATE.isWithinGeofence = STATE.geoDistance <= CONFIG.GEOFENCE_RADIUS;
 
-      // Warn if accuracy is too low (IP-based geolocation)
       if (acc > 500) {
         UI.setGeoStatus('inaccurate',
           `Low accuracy (${acc.toFixed(0)}m). Position may be wrong. Move near your store and click Refresh Location.`
@@ -513,6 +561,27 @@ const Staff = {
     } else {
       bar.classList.add('hidden');
     }
+  },
+
+  calculateHoursWorked() {
+    if (STATE.todayAttendance.length === 0) return null;
+    if (STATE.currentStatus === 'none') return null;
+    const punches = STATE.todayAttendance;
+    let totalMs = 0;
+    let inTime = null;
+    for (const p of punches) {
+      if (p.action === 'IN') {
+        inTime = p.timestamp?.toMillis ? p.timestamp.toMillis() : new Date(p.timestamp).getTime();
+      } else if (p.action === 'OUT' && inTime !== null) {
+        const outTime = p.timestamp?.toMillis ? p.timestamp.toMillis() : new Date(p.timestamp).getTime();
+        totalMs += outTime - inTime;
+        inTime = null;
+      }
+    }
+    if (STATE.currentStatus === 'clocked_in' && inTime !== null) {
+      totalMs += Date.now() - inTime;
+    }
+    return totalMs > 0 ? totalMs : null;
   }
 };
 
@@ -530,7 +599,7 @@ const Admin = {
 
   updateStats() {
     const todayIn = STATE.todayAttendance.filter(r => r.action === 'IN');
-    document.getElementById('stat-today').textContent = new Set(todayIn.map(r => r.email)).size;
+    document.getElementById('stat-today').textContent = Utils.getTodayCount();
     document.getElementById('stat-stores').textContent = STATE.stores.length;
     document.getElementById('stat-employees').textContent = STATE.employees.length;
   },
@@ -579,6 +648,7 @@ const UI = {
       document.getElementById('emp-status-text').className = 'status-text status-text-idle';
       document.getElementById('emp-trusted-time').textContent = 'Your email is not in the employee list';
       document.getElementById('emp-status-dot').className = 'status-dot';
+      document.getElementById('emp-hours-today').style.display = 'none';
       return;
     }
     Staff.updateAssignedStore();
@@ -588,6 +658,7 @@ const UI = {
     const textEl = document.getElementById('emp-status-text');
     const dotEl = document.getElementById('emp-status-dot');
     const timeEl = document.getElementById('emp-trusted-time');
+    const hoursEl = document.getElementById('emp-hours-today');
 
     if (STATE.currentStatus === 'clocked_in') {
       const last = STATE.todayAttendance[STATE.todayAttendance.length - 1];
@@ -605,6 +676,15 @@ const UI = {
       dotEl.className = 'status-dot';
     }
     timeEl.textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+    const worked = Staff.calculateHoursWorked();
+    if (worked !== null) {
+      hoursEl.textContent = `⏱ ${Utils.msToHours(worked)} worked today`;
+      hoursEl.style.display = 'block';
+    } else {
+      hoursEl.style.display = 'none';
+    }
+
     Staff.checkGeofence();
     Staff.checkOnline();
     UI.renderAttendanceHistory();
@@ -643,9 +723,14 @@ const UI = {
 
   renderAttendanceHistory() {
     const container = document.getElementById('attendance-history');
+    const badge = document.getElementById('today-count-badge');
     if (STATE.todayAttendance.length === 0) {
-      container.innerHTML = '<p class="empty-state">No records for today</p>'; return;
+      container.innerHTML = '<p class="empty-state">No records for today</p>';
+      badge.classList.add('hidden');
+      return;
     }
+    badge.textContent = `${STATE.todayAttendance.length} records`;
+    badge.classList.remove('hidden');
     container.innerHTML = STATE.todayAttendance.map(r =>
       `<div class="flex items-center justify-between p-2" style="border-bottom:1px solid var(--gray-100);">
         <div class="flex items-center gap-2">
@@ -700,18 +785,47 @@ const UI = {
 
   renderAdminAttendance() {
     const body = document.getElementById('admin-attendance-body');
-    if (STATE.attendance.length === 0) {
-      body.innerHTML = '<tr><td colspan="5" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>'; return;
+
+    // Apply client-side filter
+    const from = document.getElementById('filter-date-from').value;
+    const to = document.getElementById('filter-date-to').value;
+    let filtered = STATE.attendance;
+    if (from) filtered = filtered.filter(r => r.date >= from);
+    if (to) filtered = filtered.filter(r => r.date <= to);
+    STATE.filterActive = !!(from || to);
+
+    // Update count
+    const countEl = document.getElementById('filter-result-count');
+    countEl.textContent = `${filtered.length} of ${STATE.attendance.length} records`;
+
+    if (filtered.length === 0) {
+      body.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>'; return;
     }
-    body.innerHTML = STATE.attendance.map(r =>
-      `<tr>
+
+    body.innerHTML = filtered.map(r => {
+      const hasPhoto = !!(r.photo && r.photo.length > 100);
+      const actionColor = r.action === 'IN' ? 'var(--success)' : 'var(--danger)';
+      return `<tr>
+        <td>
+          ${hasPhoto
+            ? `<img class="photo-thumb view-photo" src="${r.photo}" alt="selfie" data-id="${r.id}" style="cursor:pointer;" title="View photo">`
+            : '<span style="color:var(--gray-300);font-size:0.75rem;">—</span>'
+          }
+        </td>
         <td>${r.date}</td>
         <td>${Utils.formatTime(r.timestamp)}</td>
         <td>${r.name || r.email}</td>
-        <td><span style="color:${r.action === 'IN' ? 'var(--success)' : 'var(--danger)'};font-weight:600;">${r.action}</span></td>
+        <td><span style="color:${actionColor};font-weight:600;">${r.action}</span></td>
         <td>${r.storeName || ''}</td>
-      </tr>`
-    ).join('');
+        <td>
+          <div class="flex gap-1" style="flex-wrap:nowrap;">
+            ${hasPhoto ? `<button class="btn action-btn btn-outline view-photo-btn" data-id="${r.id}" title="View selfie">📷</button>` : ''}
+            <button class="btn action-btn btn-primary edit-att-btn" data-id="${r.id}" data-action="${r.action}" data-name="${r.name || r.email}" data-date="${r.date}" data-time="${Utils.formatTime(r.timestamp)}" title="Edit">✏️</button>
+            <button class="btn action-btn btn-danger delete-att-btn" data-id="${r.id}" title="Delete">🗑️</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
   },
 
   populateStoreDropdown() {
@@ -724,6 +838,46 @@ const UI = {
       o.value = s.id; o.textContent = s.name; select.appendChild(o);
     });
     if (val) select.value = val;
+  },
+
+  showPhotoModal(id) {
+    const record = STATE.attendance.find(r => r.id === id);
+    if (!record || !record.photo) { Utils.showToast('No photo available', 'info'); return; }
+    document.getElementById('photo-modal-img').src = record.photo;
+    document.getElementById('photo-modal-info').textContent =
+      `${record.name || record.email} · ${record.date} ${Utils.formatTime(record.timestamp)}`;
+    document.getElementById('photo-overlay').classList.remove('hidden');
+  },
+
+  closePhotoModal() {
+    document.getElementById('photo-overlay').classList.add('hidden');
+    document.getElementById('photo-modal-img').src = '';
+  },
+
+  showEditModal(id) {
+    const record = STATE.attendance.find(r => r.id === id);
+    if (!record) { Utils.showToast('Record not found', 'error'); return; }
+    STATE.editingAttendanceId = id;
+    document.getElementById('edit-modal-desc').textContent =
+      `${record.name || record.email} · ${record.date} ${Utils.formatTime(record.timestamp)}`;
+    document.getElementById('edit-action-select').value = record.action;
+    document.getElementById('edit-modal-overlay').classList.remove('hidden');
+  },
+
+  closeEditModal() {
+    document.getElementById('edit-modal-overlay').classList.add('hidden');
+    STATE.editingAttendanceId = null;
+  },
+
+  applyFilter() {
+    if (STATE.view === 'admin') UI.renderAdminAttendance();
+  },
+
+  clearFilter() {
+    document.getElementById('filter-date-from').value = '';
+    document.getElementById('filter-date-to').value = '';
+    STATE.filterActive = false;
+    if (STATE.view === 'admin') UI.renderAdminAttendance();
   }
 };
 
@@ -732,13 +886,10 @@ const UI = {
 // ============================================
 const App = {
   init() {
-    // Bind events FIRST so buttons always respond
     this.bindEvents();
 
-    // Safety: auto-hide loading overlay after 15s if it gets stuck
     setTimeout(() => document.getElementById('loading-overlay').classList.add('hidden'), 15000);
 
-    // Verify config has been set
     if (CONFIG.firebaseConfig.apiKey === 'YOUR_API_KEY' || CONFIG.firebaseConfig.apiKey.length < 10) {
       document.querySelector('.login-box h2').textContent = '⚠️ Configuration Required';
       document.querySelector('.login-box > p').innerHTML =
@@ -752,7 +903,6 @@ const App = {
       return;
     }
 
-    // Init Firebase (wrapped so init errors don't break the app)
     try {
       Firebase.init();
     } catch (e) {
@@ -834,6 +984,51 @@ const App = {
     document.getElementById('btn-punch-out').addEventListener('click', () => Staff.punch('OUT'));
     document.getElementById('btn-export-csv').addEventListener('click', () => Admin.exportCSV());
 
+    // Photo modal
+    document.getElementById('btn-close-photo').addEventListener('click', () => UI.closePhotoModal());
+    document.getElementById('photo-overlay').addEventListener('click', e => {
+      if (e.target === e.currentTarget) UI.closePhotoModal();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        if (!document.getElementById('photo-overlay').classList.contains('hidden')) UI.closePhotoModal();
+        if (!document.getElementById('edit-modal-overlay').classList.contains('hidden')) UI.closeEditModal();
+      }
+    });
+
+    // Edit modal
+    document.getElementById('btn-cancel-edit').addEventListener('click', () => UI.closeEditModal());
+    document.getElementById('edit-modal-overlay').addEventListener('click', e => {
+      if (e.target === e.currentTarget) UI.closeEditModal();
+    });
+    document.getElementById('btn-save-edit').addEventListener('click', () => {
+      const id = STATE.editingAttendanceId;
+      const newAction = document.getElementById('edit-action-select').value;
+      if (id && newAction) DB.updateAttendance(id, newAction);
+    });
+
+    // Filter
+    document.getElementById('btn-apply-filter').addEventListener('click', () => UI.applyFilter());
+    document.getElementById('btn-clear-filter').addEventListener('click', () => UI.clearFilter());
+
+    // Delegated events for attendance table
+    document.getElementById('admin-attendance-body').addEventListener('click', e => {
+      const viewBtn = e.target.closest('.view-photo-btn');
+      const editBtn = e.target.closest('.edit-att-btn');
+      const delBtn = e.target.closest('.delete-att-btn');
+      const thumb = e.target.closest('.view-photo');
+      if (viewBtn || thumb) {
+        const id = (viewBtn || thumb).dataset.id;
+        UI.showPhotoModal(id);
+      }
+      if (editBtn) {
+        UI.showEditModal(editBtn.dataset.id);
+      }
+      if (delBtn) {
+        DB.deleteAttendance(delBtn.dataset.id);
+      }
+    });
+
     document.getElementById('store-list').addEventListener('click', e => {
       const edit = e.target.closest('.edit-store');
       const del = e.target.closest('.delete-store');
@@ -869,6 +1064,18 @@ const App = {
     document.getElementById('login-view').classList.add('hidden');
     document.getElementById('user-area').classList.remove('hidden');
     document.getElementById('user-email').textContent = user.displayName || user.email;
+
+    const roleBadge = document.getElementById('user-role-badge');
+    if (STATE.isOwner) {
+      roleBadge.textContent = 'Admin';
+      roleBadge.style.background = 'rgba(251,191,36,0.2)';
+      roleBadge.style.color = '#fbbf24';
+    } else {
+      roleBadge.textContent = 'Staff';
+      roleBadge.style.background = 'rgba(255,255,255,0.15)';
+      roleBadge.style.color = 'rgba(255,255,255,0.9)';
+    }
+
     DB.startListeners();
     if (STATE.isOwner) document.getElementById('btn-switch-admin').classList.remove('hidden');
     UI.showView('employee');
