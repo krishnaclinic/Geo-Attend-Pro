@@ -11,7 +11,7 @@
 // ============================================
 const CONFIG = {
   OWNER_EMAIL: 'krishnahospitalsapotra@gmail.com',
-  GEOFENCE_RADIUS: 100,
+  GEOFENCE_RADIUS: 50,
 
   // Get from Firebase Console → Project Settings → General → Your Web App
   firebaseConfig: {
