@@ -9,17 +9,17 @@
 // SECTION 1: CONFIG — Replace with your data
 // ============================================
 const CONFIG = {
-  OWNER_EMAIL: 'admin@company.com',
-  GEOFENCE_RADIUS: 150,
+  OWNER_EMAIL: 'krishnahospitalsapotra@gmail.com'',
+  GEOFENCE_RADIUS: 100,
 
   // Get this from Firebase Console → Project Settings → General → Your apps → Web app
-  firebaseConfig: {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+  firebaseConfig = {
+    apiKey: "AIzaSyBumdDi-oOOAoQauLnQDVHJcvbXvJ4nmu0",
+    authDomain: "geo-attend-pro.firebaseapp.com",
+    projectId: "geo-attend-pro",
+    storageBucket: "geo-attend-pro.firebasestorage.app",
+    messagingSenderId: "935757975182",
+    appId: "1:935757975182:web:a4f77773d67a02034003df"
   }
 };
 
