@@ -374,10 +374,18 @@ const DB = {
     finally { Utils.hideLoading(); }
   },
 
-  async updateAttendance(id, newAction) {
+  async updateAttendance(id, newAction, newTimestamp) {
     Utils.showLoading();
     try {
-      await Firebase.db.collection('attendance').doc(id).update({ action: newAction });
+      const updateData = { action: newAction };
+      if (newTimestamp) {
+        const d = new Date(newTimestamp);
+        if (!isNaN(d.getTime())) {
+          updateData.timestamp = firebase.firestore.Timestamp.fromDate(d);
+          updateData.date = d.toISOString().split('T')[0];
+        }
+      }
+      await Firebase.db.collection('attendance').doc(id).update(updateData);
       Utils.showToast('Record updated ✓');
       document.getElementById('edit-modal-overlay').classList.add('hidden');
       STATE.editingAttendanceId = null;
@@ -399,12 +407,7 @@ const DB = {
       let records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (staffEmail) records = records.filter(r => r.email === staffEmail);
       records.sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
-      STATE.attendance = records;
-      STATE.filterActive = true;
-      document.getElementById('filter-date-from').value = startDate;
-      document.getElementById('filter-date-to').value = endDate;
-      document.getElementById('filter-staff').value = staffEmail || '';
-      if (STATE.view === 'admin') UI.renderMonthlyReport(records, staffEmail, year, month);
+      if (STATE.view === 'admin') UI.showReportPopup(records, staffEmail, year, month);
     } catch (e) {
       Utils.showToast('Failed: ' + e.message, 'error');
     } finally { Utils.hideLoading(); }
@@ -621,6 +624,7 @@ const Admin = {
     UI.populateStoreDropdown();
     UI.populateYearDropdown();
     UI.populateStaffDropdowns();
+    UI.setDefaultFilterDates();
   },
 
   updateStats() {
@@ -888,6 +892,10 @@ const UI = {
     document.getElementById('edit-modal-desc').textContent =
       `${record.name || record.email} · ${record.date} ${Utils.formatTime(record.timestamp)}`;
     document.getElementById('edit-action-select').value = record.action;
+    const ts = record.timestamp?.toMillis ? new Date(record.timestamp.toMillis()) : new Date(record.timestamp);
+    const pad = n => String(n).padStart(2, '0');
+    const local = `${ts.getFullYear()}-${pad(ts.getMonth()+1)}-${pad(ts.getDate())}T${pad(ts.getHours())}:${pad(ts.getMinutes())}`;
+    document.getElementById('edit-timestamp').value = local;
     document.getElementById('edit-modal-overlay').classList.remove('hidden');
   },
 
@@ -904,8 +912,6 @@ const UI = {
     document.getElementById('filter-date-from').value = '';
     document.getElementById('filter-date-to').value = '';
     document.getElementById('filter-staff').value = '';
-    document.getElementById('monthly-summary').classList.add('hidden');
-    document.getElementById('report-result-count').textContent = '';
     STATE.filterActive = false;
     DB.loadAllAttendance();
   },
@@ -929,7 +935,8 @@ const UI = {
   populateYearDropdown() {
     const sel = document.getElementById('report-year');
     if (!sel) return;
-    const current = new Date().getFullYear();
+    const now = new Date();
+    const current = now.getFullYear();
     sel.innerHTML = '';
     for (let y = current - 2; y <= current + 1; y++) {
       const o = document.createElement('option');
@@ -937,40 +944,84 @@ const UI = {
       if (y === current) o.selected = true;
       sel.appendChild(o);
     }
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    document.getElementById('report-month').value = month;
   },
 
-  renderMonthlyReport(records, staffEmail, year, month) {
-    const summaryEl = document.getElementById('monthly-summary');
-    summaryEl.classList.remove('hidden');
+  setDefaultFilterDates() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    document.getElementById('filter-date-from').value = `${y}-${m}-01`;
+    document.getElementById('filter-date-to').value = `${y}-${m}-${d}`;
+  },
 
+  showReportPopup(records, staffEmail, year, month) {
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const monthName = monthNames[parseInt(month) - 1];
-
     const uniqueStaff = new Set(records.map(r => r.email)).size;
     const inCount = records.filter(r => r.action === 'IN').length;
     const outCount = records.filter(r => r.action === 'OUT').length;
-
     const staffName = staffEmail
       ? (STATE.employees.find(e => e.email === staffEmail)?.name || staffEmail)
       : 'All Staff';
 
-    document.getElementById('summary-title').textContent = `📅 ${monthName} ${year} — ${staffName}`;
-    document.getElementById('summary-details').textContent =
-      `${records.length} records · ${uniqueStaff} employee(s) · ${inCount} IN · ${outCount} OUT`;
-    document.getElementById('report-result-count').textContent = `${records.length} records found`;
+    document.getElementById('report-popup-title').textContent = `📅 ${monthName} ${year} — ${staffName}`;
+    document.getElementById('report-popup-summary').innerHTML =
+      `<strong>${records.length} records</strong> · ${uniqueStaff} employee(s) · ${inCount} IN · ${outCount} OUT`;
 
-    STATE.filterActive = true;
-    UI.renderAdminAttendance();
+    const body = document.getElementById('report-popup-body');
+    if (records.length === 0) {
+      body.innerHTML = '<p class="empty-state">No records for this period</p>';
+    } else {
+      let html = '<table class="report-table"><thead><tr><th>#</th><th>Date</th><th>Time</th><th>Name</th><th>Action</th><th>Selfie</th><th>Store</th></tr></thead><tbody>';
+      records.forEach((r, i) => {
+        const ac = r.action === 'IN' ? 'var(--success)' : 'var(--danger)';
+        const photoHtml = (r.photo && r.photo.length > 100)
+          ? `<img class="report-photo-thumb view-photo" src="${r.photo}" alt="selfie" data-id="${r.id}" title="View photo">`
+          : '<span style="color:var(--gray-300);">—</span>';
+        html += `<tr>
+          <td style="color:var(--gray-400);">${i + 1}</td>
+          <td>${r.date}</td>
+          <td>${Utils.formatTime(r.timestamp)}</td>
+          <td>${r.name || r.email}</td>
+          <td><span style="color:${ac};font-weight:600;">${r.action}</span></td>
+          <td>${photoHtml}</td>
+          <td>${r.storeName || '—'}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      body.innerHTML = html;
+
+      body.querySelectorAll('.view-photo').forEach(el => {
+        el.addEventListener('click', e => {
+          const rid = e.currentTarget.dataset.id;
+          const rec = records.find(x => x.id === rid);
+          if (rec && rec.photo) {
+            document.getElementById('photo-modal-img').src = rec.photo;
+            document.getElementById('photo-modal-info').textContent =
+              `${rec.name || rec.email} · ${rec.date} ${Utils.formatTime(rec.timestamp)}`;
+            document.getElementById('photo-overlay').classList.remove('hidden');
+          }
+        });
+      });
+    }
+    document.getElementById('report-overlay').classList.remove('hidden');
   },
 
-  clearReport() {
-    document.getElementById('monthly-summary').classList.add('hidden');
-    document.getElementById('report-result-count').textContent = '';
+  closeReportPopup() {
+    document.getElementById('report-overlay').classList.add('hidden');
+    document.getElementById('report-popup-body').innerHTML = '<p class="empty-state">No records</p>';
+  },
+
+  clearFilter() {
     document.getElementById('filter-date-from').value = '';
     document.getElementById('filter-date-to').value = '';
     document.getElementById('filter-staff').value = '';
+    STATE.filterActive = false;
     DB.loadAllAttendance();
-  }
+  },
 };
 
 // ============================================
@@ -980,9 +1031,12 @@ const App = {
   init() {
     this.bindEvents();
 
-    setTimeout(() => document.getElementById('loading-overlay').classList.add('hidden'), 15000);
+    const loadingEl = document.getElementById('loading-overlay');
+    const hideLoading = () => loadingEl.classList.add('hidden');
+    setTimeout(hideLoading, 8000);
 
     if (CONFIG.firebaseConfig.apiKey === 'YOUR_API_KEY' || CONFIG.firebaseConfig.apiKey.length < 10) {
+      hideLoading();
       document.querySelector('.login-box h2').textContent = '⚠️ Configuration Required';
       document.querySelector('.login-box > p').innerHTML =
         'Open <code>js/app.js</code> and replace the <code>firebaseConfig</code> values with your Firebase project config.<br><br>' +
@@ -998,6 +1052,7 @@ const App = {
     try {
       Firebase.init();
     } catch (e) {
+      hideLoading();
       console.error('Firebase init error:', e);
       document.getElementById('login-form').innerHTML =
         '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:1rem;text-align:left;font-size:0.8125rem;">' +
@@ -1085,6 +1140,7 @@ const App = {
       if (e.key === 'Escape') {
         if (!document.getElementById('photo-overlay').classList.contains('hidden')) UI.closePhotoModal();
         if (!document.getElementById('edit-modal-overlay').classList.contains('hidden')) UI.closeEditModal();
+        if (!document.getElementById('report-overlay').classList.contains('hidden')) UI.closeReportPopup();
       }
     });
 
@@ -1096,7 +1152,8 @@ const App = {
     document.getElementById('btn-save-edit').addEventListener('click', () => {
       const id = STATE.editingAttendanceId;
       const newAction = document.getElementById('edit-action-select').value;
-      if (id && newAction) DB.updateAttendance(id, newAction);
+      const newTimestamp = document.getElementById('edit-timestamp').value;
+      if (id && newAction) DB.updateAttendance(id, newAction, newTimestamp);
     });
 
     // Filter
@@ -1111,7 +1168,10 @@ const App = {
       if (!year || !month) { Utils.showToast('Select month and year', 'warning'); return; }
       DB.loadMonthlyReport(year, month, staffEmail || null);
     });
-    document.getElementById('btn-clear-report').addEventListener('click', () => UI.clearReport());
+    document.getElementById('btn-close-report').addEventListener('click', () => UI.closeReportPopup());
+    document.getElementById('report-overlay').addEventListener('click', e => {
+      if (e.target === e.currentTarget) UI.closeReportPopup();
+    });
 
     // Delegated events for attendance table
     document.getElementById('admin-attendance-body').addEventListener('click', e => {
@@ -1163,6 +1223,7 @@ const App = {
 
   handleAuthSuccess(user) {
     STATE.isOwner = user.email.toLowerCase() === CONFIG.OWNER_EMAIL.toLowerCase();
+    document.getElementById('loading-overlay').classList.add('hidden');
     document.getElementById('login-view').classList.add('hidden');
     document.getElementById('user-area').classList.remove('hidden');
     document.getElementById('user-email').textContent = user.displayName || user.email;
@@ -1186,6 +1247,7 @@ const App = {
 
   handleLogout() {
     DB.stopListeners();
+    document.getElementById('loading-overlay').classList.add('hidden');
     STATE.firebaseUser = null; STATE.isOwner = false; STATE.employeeRecord = null;
     STATE.stores = []; STATE.employees = []; STATE.attendance = []; STATE.todayAttendance = [];
     document.getElementById('user-area').classList.add('hidden');
