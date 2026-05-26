@@ -233,8 +233,17 @@ const DB = {
           }
         }, err => {
           if (err.code === 'failed-precondition') {
-            Utils.showToast('Create composite index for attendance query (see console for link)', 'warning', 6000);
-            console.error('Create this composite index:', 'collection: attendance, fields: email ASC, date ASC, timestamp ASC');
+            const match = err.message?.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+            const url = match ? match[0] : null;
+            if (url) {
+              Utils.showToast(
+                '⚠️ Need index: <a href="'+url+'" target="_blank" style="color:#fff;text-decoration:underline;font-weight:700;">Click to create →</a>',
+                'warning', 15000
+              );
+            } else {
+              Utils.showToast('⚠️ Need composite index for attendance query. Check console for link.', 'warning', 6000);
+            }
+            console.warn('Firestore missing index. Create here:', url || 'see Firestore docs');
           }
         });
     }
@@ -605,37 +614,28 @@ const UI = {
     const icon = document.getElementById('emp-geo-icon');
     const statusEl = document.getElementById('emp-geo-status');
     const detailEl = document.getElementById('emp-geo-detail');
-    const refreshBtn = document.getElementById('btn-refresh-location');
-    if (!refreshBtn) return;
     if (status === 'within') {
       icon.textContent = '✅';
       statusEl.textContent = '✓ Within geofence';
       statusEl.style.color = 'var(--success)';
-      refreshBtn.classList.add('hidden');
     } else if (status === 'outside') {
       icon.textContent = '❌';
       statusEl.textContent = `✕ ${STATE.geoDistance.toFixed(0)}m away (limit ${CONFIG.GEOFENCE_RADIUS}m)`;
       statusEl.style.color = 'var(--danger)';
-      refreshBtn.classList.remove('hidden');
     } else if (status === 'inaccurate') {
       icon.textContent = '⚠️';
       statusEl.textContent = '⚠ Low accuracy location';
       statusEl.style.color = 'var(--warning)';
-      refreshBtn.classList.remove('hidden');
     } else if (status === 'waiting') {
       icon.textContent = '⏳';
       statusEl.textContent = 'Requesting GPS...';
       statusEl.style.color = 'var(--gray-500)';
-      refreshBtn.classList.add('hidden');
     } else if (status === 'no-store') {
       icon.textContent = '⚠️'; statusEl.textContent = 'No store assigned'; statusEl.style.color = 'var(--warning)';
-      refreshBtn.classList.add('hidden');
     } else if (status === 'error') {
       icon.textContent = '⚠️'; statusEl.textContent = 'Location unavailable'; statusEl.style.color = 'var(--warning)';
-      refreshBtn.classList.remove('hidden');
     } else {
       icon.textContent = '⏳'; statusEl.textContent = 'Checking location...'; statusEl.style.color = 'var(--gray-500)';
-      refreshBtn.classList.add('hidden');
     }
     detailEl.textContent = detail || '';
     Staff.updatePunchButtons();
