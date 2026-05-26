@@ -14,7 +14,7 @@ const CONFIG = {
   GEOFENCE_RADIUS: 100,
 
   // Get from Firebase Console → Project Settings → General → Your Web App
-  firebaseConfig = {
+  firebaseConfig : {
   apiKey: "AIzaSyBumdDi-oOOAoQauLnQDVHJcvbXvJ4nmu0",
   authDomain: "geo-attend-pro.firebaseapp.com",
   projectId: "geo-attend-pro",
