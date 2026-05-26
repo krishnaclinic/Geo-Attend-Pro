@@ -223,6 +223,8 @@ header {
 .btn-warning { background: var(--warning); color: #fff; }
 .btn-ghost { background: transparent; color: var(--gray-600); }
 .btn-ghost:hover { background: var(--gray-100); }
+.btn-outline { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
+.btn-outline:hover { background: var(--primary); color: #fff; }
 .btn-white { background: #fff; color: var(--primary); }
 .btn-white:hover { background: var(--gray-50); }
 
