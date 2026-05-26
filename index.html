@@ -269,16 +269,16 @@
         </div>
       </div>
 
-      <!-- Attendance Records -->
+      <!-- Records Management -->
       <div class="card p-4 section">
         <div class="card-header">
-          <div class="card-title">📊 All Attendance</div>
+          <div class="card-title">📊 Records Management</div>
           <div class="flex gap-2">
             <button id="btn-export-csv" class="btn btn-sm btn-ghost">Export CSV</button>
           </div>
         </div>
 
-        <!-- Date Filter -->
+        <!-- Date Range Filter -->
         <div class="filter-row">
           <div class="filter-group">
             <label>From</label>
@@ -288,9 +288,58 @@
             <label>To</label>
             <input id="filter-date-to" class="filter-input" type="date">
           </div>
+          <div class="filter-group">
+            <label>Staff</label>
+            <select id="filter-staff" class="filter-input">
+              <option value="">All Staff</option>
+            </select>
+          </div>
           <button id="btn-apply-filter" class="btn btn-sm btn-primary">Apply</button>
           <button id="btn-clear-filter" class="btn btn-sm btn-ghost">Clear</button>
           <span id="filter-result-count" class="text-xs" style="color:var(--gray-400);align-self:center;margin-left:auto;"></span>
+        </div>
+
+        <!-- Monthly Report Controls -->
+        <div class="filter-row" style="background:var(--gray-100);border-color:var(--gray-200);">
+          <span style="font-size:0.8125rem;font-weight:600;color:var(--gray-600);align-self:center;">📅 Monthly Report</span>
+          <div class="filter-group">
+            <label>Month</label>
+            <select id="report-month" class="filter-input">
+              <option value="01">January</option>
+              <option value="02">February</option>
+              <option value="03">March</option>
+              <option value="04">April</option>
+              <option value="05">May</option>
+              <option value="06">June</option>
+              <option value="07">July</option>
+              <option value="08">August</option>
+              <option value="09">September</option>
+              <option value="10">October</option>
+              <option value="11">November</option>
+              <option value="12">December</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Year</label>
+            <select id="report-year" class="filter-input"></select>
+          </div>
+          <div class="filter-group">
+            <label>Staff</label>
+            <select id="report-staff" class="filter-input">
+              <option value="">All Staff</option>
+            </select>
+          </div>
+          <button id="btn-generate-report" class="btn btn-sm btn-success">Generate</button>
+          <span id="report-result-count" class="text-xs" style="color:var(--gray-400);align-self:center;"></span>
+        </div>
+
+        <!-- Monthly Report Summary -->
+        <div id="monthly-summary" class="hidden" style="background:#eef2ff;border-radius:var(--radius-sm);padding:0.75rem 1rem;margin-bottom:0.75rem;border:1px solid #c7d2fe;">
+          <div class="flex items-center gap-3 flex-wrap">
+            <span id="summary-title" style="font-weight:700;font-size:0.9375rem;color:var(--primary-dark);"></span>
+            <span id="summary-details" style="font-size:0.8125rem;color:var(--gray-500);"></span>
+            <button id="btn-clear-report" class="btn btn-sm btn-ghost ml-auto">✕ Clear Report</button>
+          </div>
         </div>
 
         <div class="table-wrap">
@@ -301,13 +350,14 @@
                 <th>Date</th>
                 <th>Time</th>
                 <th>Name</th>
+                <th>Email</th>
                 <th>Action</th>
                 <th>Store</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="admin-attendance-body">
-              <tr><td colspan="7" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>
+              <tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>
             </tbody>
           </table>
         </div>
