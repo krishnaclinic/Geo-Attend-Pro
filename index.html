@@ -8,21 +8,23 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📍</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z'/%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3C/svg%3E">
 
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 
-  <link rel="stylesheet" href="css/style.css?v=2.0">
+  <link rel="stylesheet" href="css/style.css?v=2.1">
 </head>
 <body>
 
-  <!-- Loading Overlay (visible by default until auth state resolves) -->
+  <!-- Loading Overlay -->
   <div id="loading-overlay">
     <div class="text-center">
-      <div class="loading-logo">📍</div>
+      <div class="loading-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>
       <div class="loading-brand">Geo Attend Pro</div>
       <div class="loading-sub">Verifying your session...</div>
       <div class="spinner"></div>
@@ -32,7 +34,7 @@
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
-  <!-- Photo Modal Overlay -->
+  <!-- Photo Modal -->
   <div id="photo-overlay" class="modal-overlay hidden">
     <div class="photo-modal">
       <img id="photo-modal-img" src="" alt="Selfie">
@@ -46,7 +48,7 @@
   <!-- Edit Attendance Modal -->
   <div id="edit-modal-overlay" class="modal-overlay hidden">
     <div class="edit-modal-inner">
-      <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:0.25rem;">Edit Attendance Record</h3>
+      <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:0.25rem;color:var(--gray-800);">Edit Attendance Record</h3>
       <p class="text-sm" style="color:var(--gray-500);margin-bottom:1.25rem;" id="edit-modal-desc">—</p>
       <div class="form-group">
         <label for="edit-action-select">Action</label>
@@ -66,28 +68,26 @@
     </div>
   </div>
 
-  <!-- Report Popup Modal -->
+  <!-- Report Popup -->
   <div id="report-overlay" class="modal-overlay hidden">
     <div class="report-popup">
       <div class="report-popup-header">
         <h3 id="report-popup-title">📅 Monthly Report</h3>
         <button class="close-btn" id="btn-close-report" title="Close">✕</button>
       </div>
-      <div class="report-summary-bar" id="report-popup-summary">
-        <strong>Loading...</strong>
-      </div>
-      <div class="report-popup-body" id="report-popup-body">
-        <p class="empty-state">No records</p>
-      </div>
+      <div class="report-summary-bar" id="report-popup-summary"><strong>Loading...</strong></div>
+      <div class="report-popup-body" id="report-popup-body"><p class="empty-state">No records</p></div>
     </div>
   </div>
 
   <!-- Header -->
   <header>
     <div class="header-inner">
-      <div class="logo">
-        <span class="logo-icon">📍</span>
-        <span>Geo Attend Pro</span>
+      <div class="logo" id="logo-home" title="Go to Staff view">
+        <span class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        </span>
+        <span class="logo-text" id="header-app-name">Geo Attend Pro</span>
       </div>
       <div id="user-area" class="hidden">
         <span id="user-email"></span>
@@ -99,17 +99,18 @@
     </div>
   </header>
 
-  <!-- Main Content -->
+  <!-- Main -->
   <main>
 
-    <!-- ====== LOGIN / REGISTER VIEW ====== -->
+    <!-- LOGIN / REGISTER -->
     <div id="login-view" class="hidden">
       <div class="login-box">
-        <div class="login-logo">📍</div>
+        <div class="login-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
         <h2>Geo Attend Pro</h2>
         <p>GPS-based staff attendance with geofencing</p>
 
-        <!-- Login Form -->
         <div id="login-form">
           <div class="form-group">
             <label for="login-email">Email</label>
@@ -117,13 +118,15 @@
           </div>
           <div class="form-group">
             <label for="login-password">Password</label>
-            <input id="login-password" class="form-input" type="password" placeholder="••••••" autocomplete="current-password">
+            <div class="password-wrapper">
+              <input id="login-password" class="form-input" type="password" placeholder="••••••" autocomplete="current-password">
+              <button type="button" class="password-toggle" data-target="login-password" tabindex="-1" aria-label="Toggle password visibility">👁</button>
+            </div>
           </div>
           <button id="btn-login" class="btn btn-primary btn-block btn-lg">Sign In</button>
           <p class="auth-toggle">Don't have an account? <a href="#" id="link-show-register">Register</a></p>
         </div>
 
-        <!-- Register Form -->
         <div id="register-form" class="hidden">
           <div class="form-group">
             <label for="reg-name">Full Name</label>
@@ -135,23 +138,35 @@
           </div>
           <div class="form-group">
             <label for="reg-password">Password</label>
-            <input id="reg-password" class="form-input" type="password" placeholder="At least 6 characters" autocomplete="new-password">
+            <div class="password-wrapper">
+              <input id="reg-password" class="form-input" type="password" placeholder="Create a strong password" autocomplete="new-password">
+              <button type="button" class="password-toggle" data-target="reg-password" tabindex="-1" aria-label="Toggle password visibility">👁</button>
+            </div>
+            <div class="password-requirements" id="password-requirements">
+              <div class="req-title">Password must contain:</div>
+              <div class="req" data-req="min">✕ At least 8 characters</div>
+              <div class="req" data-req="upper">✕ At least 1 uppercase letter</div>
+              <div class="req" data-req="lower">✕ At least 1 lowercase letter</div>
+              <div class="req" data-req="number">✕ At least 1 number</div>
+              <div class="req" data-req="special">✕ At least 1 special character</div>
+            </div>
           </div>
           <div class="form-group">
-            <label for="reg-confirm">Password</label>
-            <input id="reg-confirm" class="form-input" type="password" placeholder="Repeat password">
+            <label for="reg-confirm">Confirm Password</label>
+            <div class="password-wrapper">
+              <input id="reg-confirm" class="form-input" type="password" placeholder="Repeat password">
+              <button type="button" class="password-toggle" data-target="reg-confirm" tabindex="-1" aria-label="Toggle password visibility">👁</button>
+            </div>
           </div>
           <button id="btn-register" class="btn btn-success btn-block btn-lg">Create Account</button>
           <p class="auth-toggle">Already have an account? <a href="#" id="link-show-login">Sign In</a></p>
         </div>
-
       </div>
     </div>
 
-    <!-- ====== EMPLOYEE VIEW ====== -->
+    <!-- EMPLOYEE VIEW -->
     <div id="employee-view" class="view hidden">
 
-      <!-- Store & Status Card -->
       <div class="card p-4">
         <div class="status-header">
           <div>
@@ -160,14 +175,13 @@
           </div>
           <span id="emp-status-dot" class="status-dot"></span>
         </div>
-        <hr style="border:none;border-top:1px solid var(--white-border);margin:0.75rem 0;">
+        <hr style="border:none;border-top:1px solid var(--glass-border);margin:0.75rem 0;">
         <div class="card-label">Work Status</div>
         <div class="status-text status-text-idle" id="emp-status-text">Shift Not Started</div>
         <div class="status-time" id="emp-trusted-time">—</div>
-        <div id="emp-hours-today" class="text-sm mt-1" style="color:var(--gray-400);display:none;"></div>
+        <div id="emp-hours-today" class="text-sm mt-1" style="color:var(--gray-500);display:none;"></div>
       </div>
 
-      <!-- Geofence Card -->
       <div class="card p-4">
         <div class="flex items-center gap-3">
           <span class="geo-status-icon" id="emp-geo-icon">📍</span>
@@ -180,7 +194,6 @@
         <button id="btn-refresh-location" class="btn btn-sm btn-outline" style="margin-top:0.5rem;">🔄 Refresh Location</button>
       </div>
 
-      <!-- Selfie Card -->
       <div class="card p-4">
         <div class="flex items-center justify-between mb-2">
           <div class="card-title" style="font-size:1rem;">📸 Selfie Verification</div>
@@ -198,188 +211,166 @@
         </div>
       </div>
 
-      <!-- Punch Buttons -->
       <div class="punch-row">
         <button id="btn-punch-in" class="punch-btn punch-in" disabled>Punch In</button>
         <button id="btn-punch-out" class="punch-btn punch-out" disabled>Punch Out</button>
       </div>
 
-      <!-- Offline Status Note -->
       <div id="offline-bar" class="offline-bar hidden">
-        <div>
-          <p>📶 Working Offline</p>
-          <div class="count" id="offline-count">Firestore will sync when online</div>
-        </div>
+        <p>📶 Working Offline</p>
+        <span class="count" id="offline-count">Firestore will sync when online</span>
       </div>
 
-      <!-- History -->
       <div class="card p-4">
         <div class="card-header">
           <div class="card-title">📋 Today's History</div>
-          <span id="today-count-badge" class="badge badge-blue hidden">0 records</span>
+          <span id="today-count-badge" class="badge badge-blue hidden">0</span>
         </div>
-        <div id="attendance-history">
-          <p class="empty-state">No records for today</p>
-        </div>
+        <div id="attendance-history"><p class="empty-state">No records for today</p></div>
       </div>
     </div>
 
-    <!-- ====== ADMIN VIEW ====== -->
+    <!-- ADMIN VIEW -->
     <div id="admin-view" class="view hidden">
 
       <!-- Stats -->
       <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-icon">👤</div>
-          <div class="stat-number" id="stat-today">0</div>
-          <div class="stat-label">Today Present</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">🏪</div>
-          <div class="stat-number" id="stat-stores">0</div>
-          <div class="stat-label">Stores</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">👥</div>
-          <div class="stat-number" id="stat-employees">0</div>
-          <div class="stat-label">Employees</div>
-        </div>
+        <div class="stat-card"><div class="stat-icon">👤</div><div class="stat-number" id="stat-today">0</div><div class="stat-label">Today Present</div></div>
+        <div class="stat-card"><div class="stat-icon">🏪</div><div class="stat-number" id="stat-stores">0</div><div class="stat-label">Stores</div></div>
+        <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-number" id="stat-employees">0</div><div class="stat-label">Employees</div></div>
       </div>
 
-      <!-- Records Management -->
-      <div class="card p-4 section">
-        <div class="card-header">
-          <div class="card-title">📊 Records Management</div>
-          <div class="flex gap-2">
+      <!-- Admin Tabs -->
+      <div class="admin-tabs">
+        <button class="admin-tab active" data-tab="records">📊 Records</button>
+        <button class="admin-tab" data-tab="management">⚙️ Management</button>
+      </div>
+
+      <!-- RECORDS VIEW -->
+      <div id="admin-records-view" class="view-section">
+
+        <div class="card p-4">
+          <div class="card-header">
+            <div class="card-title">📊 Attendance Records</div>
             <button id="btn-export-csv" class="btn btn-sm btn-ghost">Export CSV</button>
           </div>
-        </div>
 
-        <!-- Date Range Filter -->
-        <div class="filter-row">
-          <div class="filter-group">
-            <label>From</label>
-            <input id="filter-date-from" class="filter-input" type="date">
+          <div class="filter-row">
+            <div class="filter-group"><label>From</label><input id="filter-date-from" class="filter-input" type="date"></div>
+            <div class="filter-group"><label>To</label><input id="filter-date-to" class="filter-input" type="date"></div>
+            <div class="filter-group"><label>Staff</label><select id="filter-staff" class="filter-input"><option value="">All Staff</option></select></div>
+            <button id="btn-apply-filter" class="btn btn-sm btn-primary">Apply</button>
+            <button id="btn-clear-filter" class="btn btn-sm btn-ghost">Clear</button>
+            <span id="filter-result-count" class="text-xs" style="color:var(--gray-500);align-self:center;margin-left:auto;"></span>
           </div>
-          <div class="filter-group">
-            <label>To</label>
-            <input id="filter-date-to" class="filter-input" type="date">
-          </div>
-          <div class="filter-group">
-            <label>Staff</label>
-            <select id="filter-staff" class="filter-input">
-              <option value="">All Staff</option>
-            </select>
-          </div>
-          <button id="btn-apply-filter" class="btn btn-sm btn-primary">Apply</button>
-          <button id="btn-clear-filter" class="btn btn-sm btn-ghost">Clear</button>
-          <span id="filter-result-count" class="text-xs" style="color:var(--gray-400);align-self:center;margin-left:auto;"></span>
-        </div>
 
-        <!-- Monthly Report Controls -->
-        <div class="filter-row" style="background:rgba(99,102,241,0.04);border-color:var(--white-border-strong);">
-          <span style="font-size:0.8125rem;font-weight:600;color:var(--gray-600);align-self:center;">📅 Monthly Report</span>
-          <div class="filter-group">
-            <label>Month</label>
-            <select id="report-month" class="filter-input">
-              <option value="01">January</option>
-              <option value="02">February</option>
-              <option value="03">March</option>
-              <option value="04">April</option>
-              <option value="05">May</option>
-              <option value="06">June</option>
-              <option value="07">July</option>
-              <option value="08">August</option>
-              <option value="09">September</option>
-              <option value="10">October</option>
-              <option value="11">November</option>
-              <option value="12">December</option>
-            </select>
+          <div class="filter-row" style="background:rgba(129,140,248,0.03);">
+            <span style="font-size:0.8125rem;font-weight:600;color:var(--gray-500);align-self:center;">📅 Monthly Report</span>
+            <div class="filter-group"><label>Month</label>
+              <select id="report-month" class="filter-input">
+                <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+                <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+                <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+                <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+              </select>
+            </div>
+            <div class="filter-group"><label>Year</label><select id="report-year" class="filter-input"></select></div>
+            <div class="filter-group"><label>Staff</label><select id="report-staff" class="filter-input"><option value="">All Staff</option></select></div>
+            <button id="btn-generate-report" class="btn btn-sm btn-success">Generate</button>
           </div>
-          <div class="filter-group">
-            <label>Year</label>
-            <select id="report-year" class="filter-input"></select>
-          </div>
-          <div class="filter-group">
-            <label>Staff</label>
-            <select id="report-staff" class="filter-input">
-              <option value="">All Staff</option>
-            </select>
-          </div>
-          <button id="btn-generate-report" class="btn btn-sm btn-success">Generate</button>
-        </div>
 
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Photo</th>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Action</th>
-                <th>Store</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="admin-attendance-body">
-              <tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>
-            </tbody>
-          </table>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Photo</th><th>Date</th><th>Time</th><th>Name</th><th>Email</th><th>Action</th><th>Store</th><th>Actions</th></tr></thead>
+              <tbody id="admin-attendance-body"><tr><td colspan="8" class="text-center" style="color:var(--gray-500);padding:1rem;">No records</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <!-- Stores -->
-      <div class="card p-4 section">
-        <div class="card-header">
-          <div class="card-title">🏪 Stores</div>
-          <button id="btn-show-store-form" class="btn btn-primary btn-sm">+ Add</button>
-        </div>
-        <div id="store-form-area" class="hidden">
-          <div class="form-row">
-            <input id="input-store-name" class="form-input" placeholder="Store Name">
-            <input id="input-store-lat" class="form-input" placeholder="Latitude" type="number" step="any">
-            <input id="input-store-lng" class="form-input" placeholder="Longitude" type="number" step="any">
+      <!-- MANAGEMENT VIEW -->
+      <div id="admin-mgmt-view" class="view-section hidden">
+
+        <div class="card p-4">
+          <div class="card-header">
+            <div class="card-title">🏪 Stores</div>
+            <button id="btn-show-store-form" class="btn btn-primary btn-sm">+ Add</button>
           </div>
-          <div class="form-actions">
-            <button id="btn-save-store" class="btn btn-success">Save</button>
-            <button id="btn-cancel-store" class="btn btn-ghost">Cancel</button>
+          <div id="store-form-area" class="hidden">
+            <div class="form-row">
+              <input id="input-store-name" class="form-input" placeholder="Store Name">
+              <input id="input-store-lat" class="form-input" placeholder="Latitude" type="number" step="any">
+              <input id="input-store-lng" class="form-input" placeholder="Longitude" type="number" step="any">
+            </div>
+            <div class="form-actions">
+              <button id="btn-save-store" class="btn btn-success">Save</button>
+              <button id="btn-cancel-store" class="btn btn-ghost">Cancel</button>
+            </div>
+          </div>
+          <div id="store-list" class="mt-2"><p class="empty-state">No stores yet. Add one above.</p></div>
+        </div>
+
+        <div class="card p-4">
+          <div class="card-header">
+            <div class="card-title">👥 Employees</div>
+            <button id="btn-show-emp-form" class="btn btn-primary btn-sm">+ Add</button>
+          </div>
+          <div id="emp-form-area" class="hidden">
+            <div class="form-row">
+              <input id="input-emp-name" class="form-input" placeholder="Full Name">
+              <input id="input-emp-email" class="form-input" placeholder="Email" type="email">
+              <select id="input-emp-store" class="form-input"><option value="">Select Store</option></select>
+            </div>
+            <div class="form-actions">
+              <button id="btn-save-emp" class="btn btn-success">Save</button>
+              <button id="btn-cancel-emp" class="btn btn-ghost">Cancel</button>
+            </div>
+          </div>
+          <div id="emp-list" class="mt-2"><p class="empty-state">No employees yet. Add one above.</p></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Admin Password Modal -->
+    <div id="admin-pwd-overlay" class="modal-overlay hidden">
+      <div class="pwd-modal-inner">
+        <h3 id="admin-pwd-title" style="font-size:1.125rem;font-weight:700;margin-bottom:0.25rem;color:var(--gray-800);">🔒 Admin Access</h3>
+        <p id="admin-pwd-desc" style="font-size:0.875rem;color:var(--gray-500);margin-bottom:1rem;">Enter admin password to continue</p>
+        <div class="form-group">
+          <label for="admin-password-input">Password</label>
+          <div class="password-wrapper">
+            <input id="admin-password-input" class="form-input" type="password" placeholder="Enter admin password">
+            <button type="button" class="password-toggle" data-target="admin-password-input" tabindex="-1" aria-label="Toggle password visibility">👁</button>
           </div>
         </div>
-        <div id="store-list" class="mt-2">
-          <p class="empty-state">No stores yet. Add one above.</p>
+        <div id="admin-pwd-setup-area" class="hidden">
+          <div class="password-requirements" id="admin-pwd-reqs">
+            <div class="req-title">Password must contain:</div>
+            <div class="req" data-req="min">✕ At least 8 characters</div>
+            <div class="req" data-req="upper">✕ At least 1 uppercase letter</div>
+            <div class="req" data-req="lower">✕ At least 1 lowercase letter</div>
+            <div class="req" data-req="number">✕ At least 1 number</div>
+            <div class="req" data-req="special">✕ At least 1 special character</div>
+          </div>
+          <p id="admin-pwd-setup-hint" style="font-size:0.75rem;color:var(--gray-500);margin-top:0.25rem;">Set your admin password for future access.</p>
+          <div class="form-group" style="margin-top:0.75rem;">
+            <label for="admin-pwd-confirm">Confirm Password</label>
+            <div class="password-wrapper">
+              <input id="admin-pwd-confirm" class="form-input" type="password" placeholder="Repeat admin password">
+              <button type="button" class="password-toggle" data-target="admin-pwd-confirm" tabindex="-1" aria-label="Toggle password visibility">👁</button>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-2" style="margin-top:0.75rem;">
+          <button id="btn-admin-pwd-submit" class="btn btn-primary flex-1">Continue</button>
+          <button id="btn-admin-pwd-cancel" class="btn btn-ghost">Cancel</button>
         </div>
       </div>
-
-      <!-- Employees -->
-      <div class="card p-4 section">
-        <div class="card-header">
-          <div class="card-title">👥 Employees</div>
-          <button id="btn-show-emp-form" class="btn btn-primary btn-sm">+ Add</button>
-        </div>
-        <div id="emp-form-area" class="hidden">
-          <div class="form-row">
-            <input id="input-emp-name" class="form-input" placeholder="Full Name">
-            <input id="input-emp-email" class="form-input" placeholder="Email" type="email">
-            <select id="input-emp-store" class="form-input">
-              <option value="">Select Store</option>
-            </select>
-          </div>
-          <div class="form-actions">
-            <button id="btn-save-emp" class="btn btn-success">Save</button>
-            <button id="btn-cancel-emp" class="btn btn-ghost">Cancel</button>
-          </div>
-        </div>
-        <div id="emp-list" class="mt-2">
-          <p class="empty-state">No employees yet. Add one above.</p>
-        </div>
-      </div>
-
     </div>
 
   </main>
 
-  <script src="js/app.js?v=2.0"></script>
+  <script src="js/app.js?v=2.1"></script>
 </body>
 </html>
