@@ -11,7 +11,7 @@
 // ============================================
 const CONFIG = {
   OWNER_EMAIL: 'krishnahospitalsapotra@gmail.com',
-  GEOFENCE_RADIUS: 100,
+  GEOFENCE_RADIUS: 50,
 
   // Get from Firebase Console → Project Settings → General → Your Web App
   firebaseConfig: {
@@ -149,6 +149,74 @@ const Utils = {
   formatTimestamp(ts) {
     if (!ts) return '—';
     return `${Utils.formatDate(ts)} ${Utils.formatTime(ts)}`;
+  },
+
+  validatePassword(password) {
+    const checks = {
+      min: password.length >= 8,
+      upper: /[A-Z]/.test(password),
+      lower: /[a-z]/.test(password),
+      number: /[0-9]/.test(password),
+      special: /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/;`~]/.test(password)
+    };
+    const allMet = Object.values(checks).every(Boolean);
+    return { checks, allMet };
+  },
+
+  togglePassword(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    const btn = input.parentElement.querySelector('.password-toggle');
+    if (btn) btn.textContent = isPassword ? '🙈' : '👁';
+  },
+
+  getPasswordHash(password) {
+    return btoa(password);
+  },
+
+  getStoredAdminPassword() {
+    try {
+      return localStorage.getItem('geoAttendPro_adminPwd');
+    } catch { return null; }
+  },
+
+  setStoredAdminPassword(password) {
+    try {
+      localStorage.setItem('geoAttendPro_adminPwd', Utils.getPasswordHash(password));
+    } catch {}
+  },
+
+  verifyAdminPassword(password) {
+    const stored = Utils.getStoredAdminPassword();
+    if (!stored) return false;
+    return stored === Utils.getPasswordHash(password);
+  },
+
+  computeAttendanceStatus(records, email) {
+    const userRecords = records.filter(r => r.email === email);
+    userRecords.sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
+    if (userRecords.length === 0) return 'absent';
+    const hasIn = userRecords.some(r => r.action === 'IN');
+    const hasOut = userRecords.some(r => r.action === 'OUT');
+    if (hasIn && hasOut) return 'present';
+    if (hasIn && !hasOut) {
+      const lastIn = userRecords.filter(r => r.action === 'IN').pop();
+      const lastInTime = lastIn.timestamp?.toMillis?.() || new Date(lastIn.timestamp).getTime();
+      if (Date.now() - lastInTime > 86400000) return 'absent';
+      return 'working';
+    }
+    return 'absent';
+  },
+
+  getMonthDays(year, month) {
+    const days = [];
+    const totalDays = new Date(year, parseInt(month), 0).getDate();
+    for (let d = 1; d <= totalDays; d++) {
+      days.push(`${year}-${month}-${String(d).padStart(2, '0')}`);
+    }
+    return days;
   }
 };
 
@@ -181,7 +249,8 @@ const Auth = {
     const password = document.getElementById('reg-password').value;
     const confirm = document.getElementById('reg-confirm').value;
     if (!name || !email || !password) { Utils.showToast('Fill all fields', 'warning'); return; }
-    if (password.length < 6) { Utils.showToast('Password must be at least 6 characters', 'warning'); return; }
+    const { checks, allMet } = Utils.validatePassword(password);
+    if (!allMet) { Utils.showToast('Password does not meet requirements', 'warning'); return; }
     if (password !== confirm) { Utils.showToast('Passwords do not match', 'warning'); return; }
     if (!Firebase.auth) { Utils.showToast('Firebase not initialized. Check config.', 'error'); return; }
     Utils.showLoading();
@@ -226,6 +295,7 @@ const DB = {
         STATE.stores = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
         if (STATE.view === 'admin') { UI.renderStores(); Admin.updateStats(); }
         if (STATE.view === 'employee') Staff.updateAssignedStore();
+        UI.updateHeaderStoreName();
       }, err => {
         if (err.code === 'permission-denied') Utils.showToast('Permission denied. Check Firestore rules.', 'error');
       });
@@ -239,6 +309,7 @@ const DB = {
         }
         if (STATE.view === 'admin') { UI.renderEmployees(); Admin.updateStats(); UI.populateStoreDropdown(); UI.populateStaffDropdowns(); }
         if (STATE.view === 'employee') UI.renderEmployeeView();
+        UI.updateHeaderStoreName();
       }, err => {
         if (err.code === 'permission-denied') Utils.showToast('Permission denied. Check Firestore rules.', 'error');
       });
@@ -678,13 +749,96 @@ const Admin = {
 // ============================================
 const UI = {
   showView(view) {
+    if (view === 'admin') {
+      const stored = Utils.getStoredAdminPassword();
+      if (!stored) {
+        UI.showAdminPwdSetup();
+      } else {
+        UI.showAdminPwdVerify();
+      }
+      return;
+    }
     STATE.view = view;
     document.getElementById('employee-view').classList.toggle('hidden', view !== 'employee');
     document.getElementById('admin-view').classList.toggle('hidden', view !== 'admin');
     document.getElementById('btn-switch-admin').classList.toggle('hidden', !(STATE.isOwner && view === 'employee'));
     document.getElementById('btn-switch-employee').classList.toggle('hidden', !(STATE.isOwner && view === 'admin'));
-    if (view === 'admin') Admin.load();
+    if (view === 'admin') {
+      Admin.load();
+      UI.switchAdminTab('records');
+    }
     if (view === 'employee') { Staff.updateAssignedStore(); UI.renderEmployeeView(); }
+    UI.updateHeaderStoreName();
+  },
+
+  showAdminPwdSetup() {
+    document.getElementById('admin-pwd-title').textContent = '🔐 Set Admin Password';
+    document.getElementById('admin-pwd-desc').textContent = 'Set a password to protect admin access.';
+    document.getElementById('admin-pwd-setup-area').classList.remove('hidden');
+    document.getElementById('admin-pwd-setup-hint').classList.remove('hidden');
+    document.getElementById('admin-password-input').value = '';
+    document.getElementById('admin-pwd-confirm').value = '';
+    const labels = { min: 'At least 8 characters', upper: 'At least 1 uppercase letter', lower: 'At least 1 lowercase letter', number: 'At least 1 number', special: 'At least 1 special character' };
+    document.getElementById('admin-pwd-reqs').querySelectorAll('.req').forEach(r => {
+      r.className = 'req unmet';
+      r.textContent = '✕ ' + (labels[r.dataset.req] || r.dataset.req);
+    });
+    document.getElementById('admin-pwd-reqs').classList.remove('hidden');
+    document.getElementById('admin-pwd-overlay').classList.remove('hidden');
+    document.getElementById('admin-password-input').focus();
+  },
+
+  showAdminPwdVerify() {
+    document.getElementById('admin-pwd-title').textContent = '🔒 Admin Access';
+    document.getElementById('admin-pwd-desc').textContent = 'Enter admin password to continue.';
+    document.getElementById('admin-pwd-setup-area').classList.add('hidden');
+    document.getElementById('admin-pwd-setup-hint').classList.add('hidden');
+    document.getElementById('admin-password-input').value = '';
+    document.getElementById('admin-pwd-overlay').classList.remove('hidden');
+    document.getElementById('admin-password-input').focus();
+  },
+
+  closeAdminPwdModal() {
+    document.getElementById('admin-pwd-overlay').classList.add('hidden');
+  },
+
+  handleAdminPwdSubmit() {
+    const input = document.getElementById('admin-password-input');
+    const password = input.value;
+    const stored = Utils.getStoredAdminPassword();
+    if (!stored) {
+      // Setup mode
+      const confirm = document.getElementById('admin-pwd-confirm').value;
+      const { checks, allMet } = Utils.validatePassword(password);
+      if (!allMet) { Utils.showToast('Password does not meet requirements', 'warning'); return; }
+      if (password !== confirm) { Utils.showToast('Passwords do not match', 'warning'); return; }
+      Utils.setStoredAdminPassword(password);
+      Utils.showToast('Admin password set ✓', 'success');
+      UI.closeAdminPwdModal();
+      UI.enterAdminView();
+    } else {
+      // Verify mode
+      if (!password) { Utils.showToast('Enter admin password', 'warning'); return; }
+      if (!Utils.verifyAdminPassword(password)) {
+        Utils.showToast('Incorrect admin password', 'error');
+        input.value = '';
+        input.focus();
+        return;
+      }
+      UI.closeAdminPwdModal();
+      UI.enterAdminView();
+    }
+  },
+
+  enterAdminView() {
+    STATE.view = 'admin';
+    document.getElementById('employee-view').classList.add('hidden');
+    document.getElementById('admin-view').classList.remove('hidden');
+    document.getElementById('btn-switch-admin').classList.add('hidden');
+    document.getElementById('btn-switch-employee').classList.remove('hidden');
+    Admin.load();
+    UI.switchAdminTab('records');
+    UI.updateHeaderStoreName();
   },
 
   renderEmployeeView() {
@@ -849,31 +1003,48 @@ const UI = {
       body.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>'; return;
     }
 
-    body.innerHTML = filtered.map(r => {
-      const hasPhoto = !!(r.photo && r.photo.length > 100);
-      const actionColor = r.action === 'IN' ? 'var(--success)' : 'var(--danger)';
-      return `<tr>
-        <td>
-          ${hasPhoto
-            ? `<img class="photo-thumb view-photo" src="${r.photo}" alt="selfie" data-id="${r.id}" style="cursor:pointer;" title="View photo">`
-            : '<span style="color:var(--gray-300);font-size:0.75rem;">—</span>'
-          }
-        </td>
-        <td>${r.date}</td>
-        <td>${Utils.formatTime(r.timestamp)}</td>
-        <td>${r.name || '—'}</td>
-        <td style="font-size:0.75rem;color:var(--gray-400);">${r.email || '—'}</td>
-        <td><span style="color:${actionColor};font-weight:600;">${r.action}</span></td>
-        <td>${r.storeName || '—'}</td>
-        <td>
-          <div class="flex gap-1" style="flex-wrap:nowrap;">
-            ${hasPhoto ? `<button class="btn action-btn btn-outline view-photo-btn" data-id="${r.id}" title="View selfie">📷</button>` : ''}
-            <button class="btn action-btn btn-primary edit-att-btn" data-id="${r.id}" data-action="${r.action}" data-name="${r.name || r.email}" data-date="${r.date}" data-time="${Utils.formatTime(r.timestamp)}" title="Edit">✏️</button>
-            <button class="btn action-btn btn-danger delete-att-btn" data-id="${r.id}" title="Delete">🗑️</button>
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
+    // Group records by staff email, sorted by date desc within each group
+    const grouped = {};
+    filtered.forEach(r => {
+      const key = r.email || 'unknown';
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(r);
+    });
+    const sortedEmails = Object.keys(grouped).sort();
+    let html = '';
+    sortedEmails.forEach(email => {
+      const recs = grouped[email].sort((a, b) => {
+        return (b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0);
+      });
+      const staffName = recs[0].name || email;
+      html += `<tr class="attendance-group-header"><td colspan="8">👤 ${staffName} (${recs.length} records)</td></tr>`;
+      recs.forEach(r => {
+        const hasPhoto = !!(r.photo && r.photo.length > 100);
+        const actionColor = r.action === 'IN' ? 'var(--success)' : 'var(--danger)';
+        html += `<tr>
+          <td>
+            ${hasPhoto
+              ? `<img class="photo-thumb view-photo" src="${r.photo}" alt="selfie" data-id="${r.id}" style="cursor:pointer;" title="View photo">`
+              : '<span style="color:var(--gray-300);font-size:0.75rem;">—</span>'
+            }
+          </td>
+          <td>${r.date}</td>
+          <td>${Utils.formatTime(r.timestamp)}</td>
+          <td>${r.name || '—'}</td>
+          <td style="font-size:0.75rem;color:var(--gray-400);">${r.email || '—'}</td>
+          <td><span style="color:${actionColor};font-weight:600;">${r.action}</span></td>
+          <td>${r.storeName || '—'}</td>
+          <td>
+            <div class="flex gap-1" style="flex-wrap:nowrap;">
+              ${hasPhoto ? `<button class="btn action-btn btn-outline view-photo-btn" data-id="${r.id}" title="View selfie">📷</button>` : ''}
+              <button class="btn action-btn btn-primary edit-att-btn" data-id="${r.id}" data-action="${r.action}" data-name="${r.name || r.email}" data-date="${r.date}" data-time="${Utils.formatTime(r.timestamp)}" title="Edit">✏️</button>
+              <button class="btn action-btn btn-danger delete-att-btn" data-id="${r.id}" title="Delete">�️</button>
+            </div>
+          </td>
+        </tr>`;
+      });
+    });
+    body.innerHTML = html;
   },
 
   populateStoreDropdown() {
@@ -974,56 +1145,118 @@ const UI = {
     document.getElementById('filter-date-to').value = `${y}-${m}-${d}`;
   },
 
+  updateHeaderStoreName() {
+    const el = document.getElementById('header-app-name');
+    if (STATE.employeeRecord && STATE.assignedStore) {
+      el.textContent = STATE.assignedStore.name;
+    } else {
+      el.textContent = 'Geo Attend Pro';
+    }
+  },
+
+  switchAdminTab(tab) {
+    document.getElementById('admin-records-view').classList.toggle('hidden', tab !== 'records');
+    document.getElementById('admin-mgmt-view').classList.toggle('hidden', tab !== 'management');
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  },
+
   showReportPopup(records, staffEmail, year, month) {
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const monthName = monthNames[parseInt(month) - 1];
-    const uniqueStaff = new Set(records.map(r => r.email)).size;
-    const inCount = records.filter(r => r.action === 'IN').length;
-    const outCount = records.filter(r => r.action === 'OUT').length;
     const staffName = staffEmail
       ? (STATE.employees.find(e => e.email === staffEmail)?.name || staffEmail)
       : 'All Staff';
 
     document.getElementById('report-popup-title').textContent = `📅 ${monthName} ${year} — ${staffName}`;
-    document.getElementById('report-popup-summary').innerHTML =
-      `<strong>${records.length} records</strong> · ${uniqueStaff} employee(s) · ${inCount} IN · ${outCount} OUT`;
+
+    const allDates = Utils.getMonthDays(year, month);
+    let employeesToShow = staffEmail
+      ? STATE.employees.filter(e => e.email === staffEmail)
+      : STATE.employees;
+    if (employeesToShow.length === 0 && records.length > 0) {
+      const emails = [...new Set(records.map(r => r.email))];
+      employeesToShow = emails.map(e => ({ email: e, name: records.find(r => r.email === e)?.name || e }));
+    }
 
     const body = document.getElementById('report-popup-body');
-    if (records.length === 0) {
+
+    if (records.length === 0 && employeesToShow.length === 0) {
       body.innerHTML = '<p class="empty-state">No records for this period</p>';
-    } else {
-      let html = '<table class="report-table"><thead><tr><th>#</th><th>Date</th><th>Time</th><th>Name</th><th>Action</th><th>Selfie</th><th>Store</th></tr></thead><tbody>';
-      records.forEach((r, i) => {
-        const ac = r.action === 'IN' ? 'var(--success)' : 'var(--danger)';
-        const photoHtml = (r.photo && r.photo.length > 100)
-          ? `<img class="report-photo-thumb view-photo" src="${r.photo}" alt="selfie" data-id="${r.id}" title="View photo">`
-          : '<span style="color:var(--gray-300);">—</span>';
-        html += `<tr>
-          <td style="color:var(--gray-400);">${i + 1}</td>
-          <td>${r.date}</td>
-          <td>${Utils.formatTime(r.timestamp)}</td>
-          <td>${r.name || r.email}</td>
-          <td><span style="color:${ac};font-weight:600;">${r.action}</span></td>
-          <td>${photoHtml}</td>
-          <td>${r.storeName || '—'}</td>
+      document.getElementById('report-popup-summary').innerHTML = '<strong>No data</strong>';
+      document.getElementById('report-overlay').classList.remove('hidden');
+      return;
+    }
+
+    // Build per-staff per-date status
+    const todayStr = Utils.getToday();
+    let summaryHtml = '';
+    let detailHtml = '<table class="report-table"><thead><tr><th>Staff</th><th>Date</th><th>Status</th><th>Actions</th><th>Store</th></tr></thead><tbody>';
+
+    let totalPresent = 0, totalAbsent = 0, totalWorking = 0, totalDays = 0;
+
+    employeesToShow.forEach(emp => {
+      allDates.forEach(date => {
+        // Skip future dates
+        if (date > todayStr) return;
+        const dayRecords = records.filter(r => r.email === emp.email && r.date === date);
+        const status = Utils.computeAttendanceStatus(dayRecords, emp.email);
+        const statusLabel = status === 'present' ? 'Present' : status === 'absent' ? 'Absent' : 'Working';
+        const statusClass = status === 'present' ? 'status-present' : status === 'absent' ? 'status-absent' : 'status-working';
+
+        if (status === 'present') totalPresent++;
+        else if (status === 'absent') totalAbsent++;
+        else totalWorking++;
+        totalDays++;
+
+        let actionHtml = '—';
+        if (dayRecords.length > 0) {
+          const last = dayRecords[dayRecords.length - 1];
+          const ac = last.action === 'IN' ? 'IN' : 'OUT';
+          const time = Utils.formatTime(last.timestamp);
+          actionHtml = `<span style="font-size:0.75rem;">${ac} ${time}</span>`;
+          if (last.photo && last.photo.length > 100) {
+            actionHtml += `<img class="report-photo-thumb view-photo ml-1" src="${last.photo}" alt="selfie" data-id="${last.id}" style="display:inline-block;vertical-align:middle;" title="View photo">`;
+          }
+        }
+
+        const storeName = dayRecords.length > 0
+          ? (dayRecords[0].storeName || '—')
+          : (Utils.getStoreName(emp.storeId) || '—');
+
+        detailHtml += `<tr>
+          <td style="font-weight:600;font-size:0.8125rem;">${emp.name || emp.email}</td>
+          <td style="font-size:0.8125rem;">${date}</td>
+          <td><span class="${statusClass}">${statusLabel}</span></td>
+          <td>${actionHtml}</td>
+          <td style="font-size:0.75rem;color:var(--gray-500);">${storeName}</td>
         </tr>`;
       });
-      html += '</tbody></table>';
-      body.innerHTML = html;
+    });
 
-      body.querySelectorAll('.view-photo').forEach(el => {
-        el.addEventListener('click', e => {
-          const rid = e.currentTarget.dataset.id;
-          const rec = records.find(x => x.id === rid);
-          if (rec && rec.photo) {
-            document.getElementById('photo-modal-img').src = rec.photo;
-            document.getElementById('photo-modal-info').textContent =
-              `${rec.name || rec.email} · ${rec.date} ${Utils.formatTime(rec.timestamp)}`;
-            document.getElementById('photo-overlay').classList.remove('hidden');
-          }
-        });
+    detailHtml += '</tbody></table>';
+
+    const uniqueStaff = employeesToShow.length;
+    summaryHtml = `<strong>${uniqueStaff} employee(s)</strong> · ${totalDays} entries · ` +
+      `<span class="status-present">${totalPresent} Present</span> · ` +
+      `<span class="status-absent">${totalAbsent} Absent</span>` +
+      (totalWorking > 0 ? ` · <span class="status-working">${totalWorking} Working</span>` : '');
+
+    document.getElementById('report-popup-summary').innerHTML = summaryHtml;
+    body.innerHTML = detailHtml;
+
+    body.querySelectorAll('.view-photo').forEach(el => {
+      el.addEventListener('click', e => {
+        const rid = e.currentTarget.dataset.id;
+        const rec = records.find(x => x.id === rid);
+        if (rec && rec.photo) {
+          document.getElementById('photo-modal-img').src = rec.photo;
+          document.getElementById('photo-modal-info').textContent =
+            `${rec.name || rec.email} · ${rec.date} ${Utils.formatTime(rec.timestamp)}`;
+          document.getElementById('photo-overlay').classList.remove('hidden');
+        }
       });
-    }
+    });
+
     document.getElementById('report-overlay').classList.remove('hidden');
   },
 
@@ -1089,6 +1322,15 @@ const App = {
     document.getElementById('btn-switch-admin').addEventListener('click', () => UI.showView('admin'));
     document.getElementById('btn-switch-employee').addEventListener('click', () => UI.showView('employee'));
 
+    // Header / Admin tabs
+    document.getElementById('logo-home').addEventListener('click', () => {
+      if (STATE.firebaseUser) UI.showView('employee');
+    });
+    document.querySelector('.admin-tabs').addEventListener('click', e => {
+      const tab = e.target.closest('.admin-tab');
+      if (tab) { UI.switchAdminTab(tab.dataset.tab); if (tab.dataset.tab === 'records') Admin.load(); }
+    });
+
     document.getElementById('btn-show-store-form').addEventListener('click', () => {
       STATE.editingStoreId = null;
       ['input-store-name', 'input-store-lat', 'input-store-lng'].forEach(id => document.getElementById(id).value = '');
@@ -1148,6 +1390,64 @@ const App = {
     document.getElementById('btn-punch-out').addEventListener('click', () => Staff.punch('OUT'));
     document.getElementById('btn-export-csv').addEventListener('click', () => Admin.exportCSV());
 
+    // Password toggle delegation
+    document.addEventListener('click', e => {
+      const toggle = e.target.closest('.password-toggle');
+      if (toggle) {
+        const targetId = toggle.dataset.target;
+        Utils.togglePassword(targetId);
+      }
+    });
+
+    // Live password validation guide
+    document.getElementById('reg-password').addEventListener('input', function() {
+      const pwd = this.value;
+      const { checks } = Utils.validatePassword(pwd);
+      document.querySelectorAll('#password-requirements .req').forEach(el => {
+        const req = el.dataset.req;
+        if (checks[req]) {
+          el.className = 'req met';
+          const labels = { min: 'At least 8 characters', upper: 'At least 1 uppercase letter', lower: 'At least 1 lowercase letter', number: 'At least 1 number', special: 'At least 1 special character' };
+          el.textContent = '✓ ' + labels[req];
+        } else {
+          el.className = 'req unmet';
+          const labels = { min: 'At least 8 characters', upper: 'At least 1 uppercase letter', lower: 'At least 1 lowercase letter', number: 'At least 1 number', special: 'At least 1 special character' };
+          el.textContent = '✕ ' + labels[req];
+        }
+      });
+    });
+
+    // Live admin password validation guide
+    document.getElementById('admin-password-input').addEventListener('input', function() {
+      const pwd = this.value;
+      const { checks } = Utils.validatePassword(pwd);
+      document.querySelectorAll('#admin-pwd-reqs .req').forEach(el => {
+        const req = el.dataset.req;
+        if (checks[req]) {
+          el.className = 'req met';
+          const labels = { min: 'At least 8 characters', upper: 'At least 1 uppercase letter', lower: 'At least 1 lowercase letter', number: 'At least 1 number', special: 'At least 1 special character' };
+          el.textContent = '✓ ' + labels[req];
+        } else {
+          el.className = 'req unmet';
+          const labels = { min: 'At least 8 characters', upper: 'At least 1 uppercase letter', lower: 'At least 1 lowercase letter', number: 'At least 1 number', special: 'At least 1 special character' };
+          el.textContent = '✕ ' + labels[req];
+        }
+      });
+    });
+
+    // Admin password modal
+    document.getElementById('btn-admin-pwd-submit').addEventListener('click', () => UI.handleAdminPwdSubmit());
+    document.getElementById('btn-admin-pwd-cancel').addEventListener('click', () => UI.closeAdminPwdModal());
+    document.getElementById('admin-pwd-overlay').addEventListener('click', e => {
+      if (e.target === e.currentTarget) UI.closeAdminPwdModal();
+    });
+    document.getElementById('admin-password-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') UI.handleAdminPwdSubmit();
+    });
+    document.getElementById('admin-pwd-confirm').addEventListener('keydown', e => {
+      if (e.key === 'Enter') UI.handleAdminPwdSubmit();
+    });
+
     // Photo modal
     document.getElementById('btn-close-photo').addEventListener('click', () => UI.closePhotoModal());
     document.getElementById('photo-overlay').addEventListener('click', e => {
@@ -1158,6 +1458,7 @@ const App = {
         if (!document.getElementById('photo-overlay').classList.contains('hidden')) UI.closePhotoModal();
         if (!document.getElementById('edit-modal-overlay').classList.contains('hidden')) UI.closeEditModal();
         if (!document.getElementById('report-overlay').classList.contains('hidden')) UI.closeReportPopup();
+        if (!document.getElementById('admin-pwd-overlay').classList.contains('hidden')) UI.closeAdminPwdModal();
       }
     });
 
@@ -1277,6 +1578,7 @@ const App = {
     document.getElementById('btn-switch-employee').classList.add('hidden');
     document.getElementById('login-email').value = '';
     document.getElementById('login-password').value = '';
+    UI.closeAdminPwdModal();
     Staff.closeCamera();
   }
 };
