@@ -9,17 +9,13 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2'%3E%3Cpath d='M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z'/%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3C/svg%3E">
-
-  <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-
   <link rel="stylesheet" href="css/style.css?v=2.1">
 </head>
 <body>
 
-  <!-- Loading Overlay -->
   <div id="loading-overlay">
     <div class="text-center">
       <div class="loading-logo">
@@ -31,7 +27,6 @@
     </div>
   </div>
 
-  <!-- Toast Container -->
   <div id="toast-container"></div>
 
   <!-- Photo Modal -->
@@ -68,6 +63,26 @@
     </div>
   </div>
 
+  <!-- Punch Confirmation Modal -->
+  <div id="confirm-punch-overlay" class="modal-overlay hidden">
+    <div class="confirm-punch-inner">
+      <h3 id="confirm-punch-title" style="font-size:1.125rem;font-weight:700;margin-bottom:0.25rem;color:var(--gray-800);">Confirm Punch</h3>
+      <div id="confirm-punch-preview" class="confirm-punch-preview">
+        <img id="confirm-punch-selfie" class="confirm-punch-img" alt="Selfie preview">
+        <div class="confirm-punch-details">
+          <div id="confirm-punch-action" class="confirm-punch-action">Punch In</div>
+          <div id="confirm-punch-store" class="confirm-punch-store">—</div>
+          <div id="confirm-punch-time" class="confirm-punch-time">—</div>
+          <div id="confirm-punch-location" class="confirm-punch-location">—</div>
+        </div>
+      </div>
+      <div class="flex gap-2" style="margin-top:1rem;">
+        <button id="btn-confirm-punch" class="btn btn-success flex-1">Confirm</button>
+        <button id="btn-cancel-punch" class="btn btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Report Popup -->
   <div id="report-overlay" class="modal-overlay hidden">
     <div class="report-popup">
@@ -99,7 +114,6 @@
     </div>
   </header>
 
-  <!-- Main -->
   <main>
 
     <!-- LOGIN / REGISTER -->
@@ -124,6 +138,7 @@
             </div>
           </div>
           <button id="btn-login" class="btn btn-primary btn-block btn-lg">Sign In</button>
+          <p class="auth-toggle" style="margin-top:0.5rem;"><a href="#" id="link-forgot-password" style="font-size:0.8125rem;">Forgot Password?</a></p>
           <p class="auth-toggle">Don't have an account? <a href="#" id="link-show-register">Register</a></p>
         </div>
 
@@ -166,6 +181,12 @@
 
     <!-- EMPLOYEE VIEW -->
     <div id="employee-view" class="view hidden">
+
+      <!-- Reminder Banner -->
+      <div id="reminder-banner" class="reminder-banner hidden">
+        <span id="reminder-banner-text">⏰ Reminder</span>
+        <button id="btn-dismiss-reminder" class="btn btn-sm btn-ghost" style="color:inherit;">✕</button>
+      </div>
 
       <div class="card p-4">
         <div class="status-header">
@@ -216,6 +237,11 @@
         <button id="btn-punch-out" class="punch-btn punch-out" disabled>Punch Out</button>
       </div>
 
+      <div id="open-shift-bar" class="open-shift-bar hidden">
+        <p id="open-shift-text">⚠️ You have an open shift from <span id="open-shift-time">—</span></p>
+        <button id="btn-close-open-shift" class="btn btn-sm btn-danger">Punch Out Now</button>
+      </div>
+
       <div id="offline-bar" class="offline-bar hidden">
         <p>📶 Working Offline</p>
         <span class="count" id="offline-count">Firestore will sync when online</span>
@@ -233,16 +259,17 @@
     <!-- ADMIN VIEW -->
     <div id="admin-view" class="view hidden">
 
-      <!-- Stats -->
       <div class="stats-grid">
         <div class="stat-card"><div class="stat-icon">👤</div><div class="stat-number" id="stat-today">0</div><div class="stat-label">Today Present</div></div>
+        <div class="stat-card"><div class="stat-icon">🚫</div><div class="stat-number" id="stat-absent">0</div><div class="stat-label">Today Absent</div></div>
+        <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-number" id="stat-open">0</div><div class="stat-label">Open Shifts</div></div>
         <div class="stat-card"><div class="stat-icon">🏪</div><div class="stat-number" id="stat-stores">0</div><div class="stat-label">Stores</div></div>
         <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-number" id="stat-employees">0</div><div class="stat-label">Employees</div></div>
       </div>
 
-      <!-- Admin Tabs -->
       <div class="admin-tabs">
         <button class="admin-tab active" data-tab="records">📊 Records</button>
+        <button class="admin-tab" data-tab="calendar">📅 Calendar</button>
         <button class="admin-tab" data-tab="management">⚙️ Management</button>
       </div>
 
@@ -284,6 +311,34 @@
               <thead><tr><th>Photo</th><th>Date</th><th>Time</th><th>Name</th><th>Email</th><th>Action</th><th>Store</th><th>Actions</th></tr></thead>
               <tbody id="admin-attendance-body"><tr><td colspan="8" class="text-center" style="color:var(--gray-500);padding:1rem;">No records</td></tr></tbody>
             </table>
+          </div>
+
+          <div id="pagination-controls" class="pagination-controls hidden">
+            <button id="btn-prev-page" class="btn btn-sm btn-ghost">◀ Prev</button>
+            <span id="page-info" class="page-info">Page 1</span>
+            <button id="btn-next-page" class="btn btn-sm btn-ghost">Next ▶</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CALENDAR VIEW -->
+      <div id="admin-calendar-view" class="view-section hidden">
+        <div class="card p-4">
+          <div class="card-header">
+            <div class="card-title">📅 Attendance Calendar</div>
+            <div class="flex gap-2 items-center">
+              <button id="btn-cal-prev" class="btn btn-sm btn-ghost">◀</button>
+              <span id="cal-month-label" class="text-sm font-semibold" style="color:var(--gray-300);min-width:8rem;text-align:center;">—</span>
+              <button id="btn-cal-next" class="btn btn-sm btn-ghost">▶</button>
+              <select id="cal-staff-filter" class="filter-input" style="min-width:140px;"><option value="">All Staff</option></select>
+            </div>
+          </div>
+          <div id="calendar-grid" class="calendar-grid"><p class="empty-state">Loading...</p></div>
+          <div class="calendar-legend">
+            <span><span class="cal-dot cal-dot-present"></span> Present</span>
+            <span><span class="cal-dot cal-dot-absent"></span> Absent</span>
+            <span><span class="cal-dot cal-dot-working"></span> Working</span>
+            <span><span class="cal-dot cal-dot-none"></span> No Data</span>
           </div>
         </div>
       </div>
