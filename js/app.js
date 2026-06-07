@@ -40,9 +40,12 @@ const STATE = {
   editingAttendanceId: null,
   filterActive: false,
   openShift: null,
+  autoCloseShiftId: null,
   attendancePage: 0,
   attendanceTotal: 0,
   allAttendanceRaw: [],
+  selectedRecords: new Set(),
+  yesterdayAttendance: [],
   reminderInterval: null,
   pendingPunchAction: null,
   unsubStores: null,
@@ -87,7 +90,11 @@ const Utils = {
     c.appendChild(t);
     setTimeout(() => { t.classList.add('toast-out'); setTimeout(() => t.remove(), 300); }, duration);
   },
-  showLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); },
+  showLoading(msg) {
+    const el = document.getElementById('loading-message');
+    el.textContent = msg || 'Verifying your session...';
+    document.getElementById('loading-overlay').classList.remove('hidden');
+  },
   hideLoading() { document.getElementById('loading-overlay').classList.add('hidden'); },
   haversine(lat1, lng1, lat2, lng2) {
     const R = 6371000;
@@ -131,6 +138,18 @@ const Utils = {
     };
     return { checks, allMet: Object.values(checks).every(Boolean) };
   },
+  // F4: Update password requirement indicators in a container
+  updatePasswordReqs(password, containerId) {
+    const { checks } = Utils.validatePassword(password);
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.querySelectorAll('.req').forEach(req => {
+      const key = req.dataset.req;
+      const met = checks[key];
+      req.className = 'req ' + (met ? 'met' : 'fail');
+      req.textContent = (met ? '✓' : '✕') + ' ' + req.textContent.replace(/^[✓✕]\s*/, '');
+    });
+  },
   togglePassword(inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
@@ -146,10 +165,30 @@ const Utils = {
     return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
   },
   getStoredAdminPassword() { try { return localStorage.getItem('geoAttendPro_adminPwd'); } catch { return null; } },
-  async setStoredAdminPassword(password) { try { localStorage.setItem('geoAttendPro_adminPwd', await Utils.getPasswordHash(password)); } catch {} },
+  async setStoredAdminPassword(password) {
+    const hash = await Utils.getPasswordHash(password);
+    try { localStorage.setItem('geoAttendPro_adminPwd', hash); } catch {}
+    // B3: Also store in Firestore for cross-device sync
+    try { await Firebase.db.collection('config').doc('adminPwd').set({ hash }); } catch {}
+  },
   async verifyAdminPassword(password) {
-    const stored = Utils.getStoredAdminPassword();
-    return stored ? stored === await Utils.getPasswordHash(password) : false;
+    const hash = await Utils.getPasswordHash(password);
+    const localStored = Utils.getStoredAdminPassword();
+    if (localStored) {
+      const match = localStored === hash;
+      // B3: If local doesn't match, try Firestore (password may have been changed on another device)
+      if (match) return true;
+    }
+    // B3: Check Firestore (cross-device sync or local mismatch)
+    try {
+      const doc = await Firebase.db.collection('config').doc('adminPwd').get();
+      if (doc.exists) {
+        const remoteHash = doc.data().hash;
+        try { localStorage.setItem('geoAttendPro_adminPwd', remoteHash); } catch {}
+        return remoteHash === hash;
+      }
+    } catch {}
+    return localStored ? localStored === hash : false;
   },
   computeAttendanceStatus(records, email) {
     const userRecords = records.filter(r => r.email === email);
@@ -202,7 +241,7 @@ const Auth = {
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
     if (!email || !password) { Utils.showToast('Enter email and password', 'warning'); return; }
-    Utils.showLoading();
+    Utils.showLoading('Signing in...');
     try {
       await Firebase.auth.signInWithEmailAndPassword(email, password);
     } catch (e) {
@@ -224,7 +263,7 @@ const Auth = {
     if (!allMet) { Utils.showToast('Password does not meet requirements', 'warning'); return; }
     if (password !== confirm) { Utils.showToast('Passwords do not match', 'warning'); return; }
     if (!Firebase.auth) { Utils.showToast('Firebase not initialized.', 'error'); return; }
-    Utils.showLoading();
+    Utils.showLoading('Creating your account...');
     try {
       const cred = await Firebase.auth.createUserWithEmailAndPassword(email, password);
       await cred.user.updateProfile({ displayName: name });
@@ -239,7 +278,7 @@ const Auth = {
     const email = document.getElementById('login-email').value.trim();
     if (!email) { Utils.showToast('Enter your email first', 'warning'); return; }
     if (!Firebase.auth) { Utils.showToast('Firebase not initialized.', 'error'); return; }
-    Utils.showLoading();
+    Utils.showLoading('Sending reset email...');
     try {
       await Firebase.auth.sendPasswordResetEmail(email);
       Utils.showToast('Password reset email sent! Check your inbox.', 'success');
@@ -334,27 +373,27 @@ const DB = {
   },
   async addStore(name, lat, lng) {
     if (!name || isNaN(lat) || isNaN(lng)) { Utils.showToast('Invalid store data', 'error'); return; }
-    Utils.showLoading();
-    try { await Firebase.db.collection('stores').add({ name: name.trim(), lat: parseFloat(lat), lng: parseFloat(lng) }); Utils.showToast(`Store "${name}" added ✓`); }
+    Utils.showLoading('Adding store...');
+    try { await Firebase.db.collection('stores').add({ name: name.trim(), lat: parseFloat(lat), lng: parseFloat(lng) }); Utils.showToast('Store "' + Utils.escapeHtml(name) + '" added ✓'); }
     catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
     finally { Utils.hideLoading(); }
   },
   async updateStore(id, data) {
-    Utils.showLoading();
+    Utils.showLoading('Updating store...');
     try { await Firebase.db.collection('stores').doc(id).update(data); Utils.showToast('Store updated ✓'); }
     catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
     finally { Utils.hideLoading(); }
   },
   async deleteStore(id) {
     if (!confirm('Delete this store?')) return;
-    Utils.showLoading();
+    Utils.showLoading('Deleting store...');
     try { await Firebase.db.collection('stores').doc(id).delete(); Utils.showToast('Store deleted ✓'); }
     catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
     finally { Utils.hideLoading(); }
   },
   async addEmployee(name, email, storeId) {
     if (!name || !email || !storeId) { Utils.showToast('Fill all employee fields', 'error'); return; }
-    Utils.showLoading();
+    Utils.showLoading('Adding employee...');
     try {
       await Firebase.db.collection('employees').doc(email.trim().toLowerCase()).set({
         name: name.trim(), email: email.trim().toLowerCase(), storeId, createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -365,26 +404,58 @@ const DB = {
   },
   async deleteEmployee(email) {
     if (!confirm('Delete this employee?')) return;
-    Utils.showLoading();
+    Utils.showLoading('Deleting employee...');
     try { await Firebase.db.collection('employees').doc(email).delete(); Utils.showToast('Employee deleted ✓'); }
     catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
     finally { Utils.hideLoading(); }
   },
   async updateEmployee(oldEmail, data) {
-    Utils.showLoading();
+    Utils.showLoading('Updating employee...');
     try {
       const snap = await Firebase.db.collection('employees').doc(oldEmail).get();
       if (!snap.exists) { Utils.showToast('Employee not found', 'error'); return; }
-      // M11: Block email changes — too risky to cascade to attendance records
       const newEmail = data.email?.trim().toLowerCase();
       if (newEmail && newEmail !== oldEmail) {
-        Utils.showToast('Cannot change email — create a new employee instead', 'warning');
-        return;
+        // F8: Email change — cascade to all related records
+        const duplicate = await Firebase.db.collection('employees').doc(newEmail).get();
+        if (duplicate.exists) {
+          Utils.showToast('An employee with this email already exists', 'error');
+          Utils.hideLoading();
+          return;
+        }
+        if (!confirm(`Change email from ${oldEmail} to ${newEmail}?\n\nThis will update ALL attendance records for this employee.`)) {
+          Utils.hideLoading();
+          return;
+        }
+        Utils.showLoading('Cascading email change to attendance records...');
+        const { email, ...updateData } = data;
+        updateData.email = newEmail;
+        // 1. Create new employee doc with new email as ID
+        await Firebase.db.collection('employees').doc(newEmail).set({
+          ...snap.data(),
+          ...updateData,
+          email: newEmail
+        });
+        // 2. Update all attendance records referencing old email (batch limit = 500)
+        const attSnap = await Firebase.db.collection('attendance').where('email', '==', oldEmail).get();
+        let updated = 0;
+        for (let i = 0; i < attSnap.docs.length; i += 500) {
+          const batch = Firebase.db.batch();
+          attSnap.docs.slice(i, i + 500).forEach(doc => { batch.update(doc.ref, { email: newEmail }); });
+          await batch.commit();
+          updated += Math.min(500, attSnap.docs.length - i);
+        }
+        // 3. Delete old employee doc
+        await Firebase.db.collection('employees').doc(oldEmail).delete();
+        Utils.showToast('Email updated → ' + Utils.escapeHtml(newEmail) + ' (' + updated + ' records updated)');
+        await DB.loadEmployees();
+        await DB.loadAllAttendance();
+      } else {
+        // No email change — just update other fields
+        const { email, ...updateData } = data;
+        await Firebase.db.collection('employees').doc(oldEmail).update(updateData);
+        Utils.showToast('Employee updated ✓');
       }
-      // Remove email from data to avoid accidental overwrite
-      const { email, ...updateData } = data;
-      await Firebase.db.collection('employees').doc(oldEmail).update(updateData);
-      Utils.showToast('Employee updated ✓');
     } catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
     finally { Utils.hideLoading(); }
   },
@@ -419,13 +490,13 @@ const DB = {
   },
   async deleteAttendance(id) {
     if (!confirm('Delete this attendance record?')) return;
-    Utils.showLoading();
+    Utils.showLoading('Deleting record...');
     try { await Firebase.db.collection('attendance').doc(id).delete(); Utils.showToast('Record deleted ✓'); DB.loadAllAttendance(); }
     catch (e) { Utils.showToast('Failed: ' + e.message, 'error'); }
     finally { Utils.hideLoading(); }
   },
   async updateAttendance(id, newAction, newTimestamp) {
-    Utils.showLoading();
+    Utils.showLoading('Updating record...');
     try {
       const updateData = { action: newAction };
       if (newTimestamp) {
@@ -448,7 +519,7 @@ const DB = {
     const startDate = `${year}-${paddedMonth}-01`;
     const lastDay = new Date(year, parseInt(month), 0).getDate();
     const endDate = `${year}-${paddedMonth}-${String(lastDay).padStart(2, '0')}`;
-    Utils.showLoading();
+    Utils.showLoading('Generating report...');
     try {
       const snap = await Firebase.db.collection('attendance').where('date', '>=', startDate).where('date', '<=', endDate).get();
       let records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -590,7 +661,9 @@ const Staff = {
     const btnOut = document.getElementById('btn-punch-out');
     const canPunch = STATE.isWithinGeofence && STATE.selfieDataUrl && STATE.geoPosition && STATE.geoDistance !== null;
     const inGeoRange = STATE.isWithinGeofence;
-    const hasInToday = STATE.todayAttendance.some(r => r.action === 'IN');
+    // B2: Use lastActionIsIn instead of hasInToday — after auto-close, the IN record still exists
+    // so we need to check if the LAST action was IN (shift still open) vs OUT (shift closed, can IN again)
+    const lastActionIsIn = STATE.todayAttendance.length > 0 && STATE.todayAttendance[STATE.todayAttendance.length - 1]?.action === 'IN';
     const openShift = STATE.openShift || Staff.detectOpenShift();
 
     if (openShift) {
@@ -603,7 +676,7 @@ const Staff = {
         btnIn.disabled = !(canPunch && inGeoRange);
         btnOut.disabled = true;
       }
-    } else if (hasInToday) {
+    } else if (lastActionIsIn) {
       btnIn.disabled = true;
       btnOut.disabled = !(canPunch && inGeoRange);
     } else {
@@ -612,9 +685,15 @@ const Staff = {
     }
   },
   async autoCloseShift(shiftRecord) {
+    // C5: Guard against infinite loop — skip if already closing this shift
+    if (shiftRecord.id === STATE.autoCloseShiftId) return;
+    STATE.autoCloseShiftId = shiftRecord.id;
+    STATE.openShift = null;
+    // C5: Remove the stale IN record from STATE.todayAttendance so detectOpenShift()
+    // returns null immediately, preventing the loop before Firestore snapshot syncs
+    STATE.todayAttendance = STATE.todayAttendance.filter(r => r.id !== shiftRecord.id);
     try {
       const employeeRecord = STATE.employeeRecord || STATE.employees.find(e => e.email === shiftRecord.email);
-      // Use the shift's original date if available, otherwise today
       const closeDate = shiftRecord.date || Utils.getToday();
       await Firebase.db.collection('attendance').add({
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
@@ -633,7 +712,7 @@ const Staff = {
       console.error('autoCloseShift failed:', e);
       Utils.showToast('⚠️ Auto-close failed: ' + e.message, 'error');
     }
-    STATE.openShift = null;
+    // C5: Don't reset autoCloseShiftId — it prevents re-entry until a new punch-in resets it
     Staff.updatePunchButtons();
   },
   showPunchConfirm(action) {
@@ -668,7 +747,7 @@ const Staff = {
       return;
     }
 
-    Utils.showLoading();
+    Utils.showLoading(action === 'IN' ? 'Punching in...' : 'Punching out...');
     try {
       await Firebase.db.collection('attendance').add({
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
@@ -698,10 +777,15 @@ const Staff = {
   },
   checkOnline() {
     const bar = document.getElementById('offline-bar');
+    const globalBar = document.getElementById('global-offline-bar');
     if (!navigator.onLine) {
       bar.classList.remove('hidden');
+      if (globalBar) globalBar.classList.remove('hidden');
       document.getElementById('offline-count').textContent = 'Firestore will sync when reconnected';
-    } else { bar.classList.add('hidden'); }
+    } else {
+      bar.classList.add('hidden');
+      if (globalBar) globalBar.classList.add('hidden');
+    }
   },
   calculateHoursWorked() {
     if (STATE.todayAttendance.length === 0 || STATE.currentStatus === 'none') return null;
@@ -808,6 +892,45 @@ const UI = {
     document.getElementById('admin-password-input').focus();
   },
   closeAdminPwdModal() { document.getElementById('admin-pwd-overlay').classList.add('hidden'); },
+  // F4: Admin password reset modal
+  showAdminResetModal() {
+    document.getElementById('admin-reset-email').value = STATE.userEmail || '';
+    document.getElementById('admin-reset-firebase-pwd').value = '';
+    document.getElementById('admin-reset-new-pwd').value = '';
+    document.getElementById('admin-reset-confirm-pwd').value = '';
+    document.getElementById('admin-reset-reqs').querySelectorAll('.req').forEach(r => r.className = 'req');
+    document.getElementById('admin-reset-overlay').classList.remove('hidden');
+  },
+  closeAdminResetModal() { document.getElementById('admin-reset-overlay').classList.add('hidden'); },
+  async handleAdminResetSubmit() {
+    const email = document.getElementById('admin-reset-email').value.trim();
+    const firebasePwd = document.getElementById('admin-reset-firebase-pwd').value;
+    const newPwd = document.getElementById('admin-reset-new-pwd').value;
+    const confirmPwd = document.getElementById('admin-reset-confirm-pwd').value;
+    if (!email || !firebasePwd || !newPwd || !confirmPwd) {
+      Utils.showToast('Fill in all fields', 'warning'); return;
+    }
+    const { allMet } = Utils.validatePassword(newPwd);
+    if (!allMet) { Utils.showToast('New password does not meet requirements', 'warning'); return; }
+    if (newPwd !== confirmPwd) { Utils.showToast('Passwords do not match', 'warning'); return; }
+    Utils.showLoading('Verifying credentials & resetting password...');
+    try {
+      // Re-authenticate with Firebase credentials
+      const cred = await Firebase.auth.signInWithEmailAndPassword(email, firebasePwd);
+      // Set new admin password
+      await Utils.setStoredAdminPassword(newPwd);
+      Utils.showToast('Admin password reset successfully ✓', 'success');
+      UI.closeAdminResetModal();
+      UI.enterAdminView();
+    } catch (e) {
+      if (e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found') {
+        Utils.showToast('Incorrect email or Firebase password', 'error');
+      } else {
+        Utils.showToast('⚠️ Reset failed: ' + e.message, 'error');
+      }
+    }
+    Utils.hideLoading();
+  },
   async handleAdminPwdSubmit() {
     const input = document.getElementById('admin-password-input');
     const password = input.value;
@@ -983,35 +1106,64 @@ const UI = {
     STATE.filterActive = !!(from || to || staffEmail);
     document.getElementById('filter-result-count').textContent = `${STATE.attendancePage * CONFIG.PAGE_SIZE + 1}-${Math.min((STATE.attendancePage + 1) * CONFIG.PAGE_SIZE, STATE.attendanceTotal)} of ${STATE.attendanceTotal} records`;
     if (filtered.length === 0) {
-      body.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>'; return;
+      body.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>';
+      document.getElementById('admin-attendance-foot').classList.add('hidden');
+      return;
     }
     const grouped = {};
     filtered.forEach(r => { const key = r.email || 'unknown'; if (!grouped[key]) grouped[key] = []; grouped[key].push(r); });
     const sortedEmails = Object.keys(grouped).sort();
+    STATE.selectedRecords = STATE.selectedRecords || new Set();
+    STATE.selectedRecords.clear();
+    document.getElementById('select-all-att').checked = false;
     let html = '';
     sortedEmails.forEach(email => {
       const recs = grouped[email].sort((a, b) => (b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0));
       const staffName = recs[0].name || email;
       html += `<tr class="attendance-group-header"><td colspan="8">👤 ${Utils.escapeHtml(staffName)} (${recs.length} records)</td></tr>`;
+      // F2: Slidable — wrap records in a scrollable container showing 4 at a time
+      html += `<tr><td colspan="8"><div class="record-slidable" data-staff="${Utils.escapeAttr(email)}">`;
       recs.forEach(r => {
         const hasPhoto = !!(r.photo && r.photo.length > 100);
         const safePhotoUrl = hasPhoto ? Utils.sanitizePhotoUrl(r.photo) : '';
         const actionColor = r.action === 'IN' ? 'var(--success)' : 'var(--danger)';
-        html += `<tr>
-          <td>${hasPhoto && safePhotoUrl ? `<img class="photo-thumb view-photo" src="${Utils.escapeAttr(safePhotoUrl)}" alt="selfie" data-id="${Utils.escapeAttr(r.id)}" style="cursor:pointer;" title="View photo">` : '<span style="color:var(--gray-300);font-size:0.75rem;">—</span>'}</td>
-          <td>${Utils.escapeHtml(r.date)}</td><td>${Utils.formatTime(r.timestamp)}</td>
-          <td>${Utils.escapeHtml(r.name || '—')}</td><td style="font-size:0.75rem;color:var(--gray-400);">${Utils.escapeHtml(r.email || '—')}</td>
-          <td><span style="color:${actionColor};font-weight:600;">${Utils.escapeHtml(r.action)}</span></td>
-          <td>${Utils.escapeHtml(r.storeName || '—')}</td>
-          <td><div class="flex gap-1" style="flex-wrap:nowrap;">
-            ${hasPhoto && safePhotoUrl ? `<button class="btn action-btn btn-outline view-photo-btn" data-id="${Utils.escapeAttr(r.id)}" title="View selfie">📷</button>` : ''}
-            <button class="btn action-btn btn-primary edit-att-btn" data-id="${Utils.escapeAttr(r.id)}" data-action="${Utils.escapeAttr(r.action)}" data-name="${Utils.escapeAttr(r.name || r.email)}" data-date="${Utils.escapeAttr(r.date)}" data-time="${Utils.escapeAttr(Utils.formatTime(r.timestamp))}" title="Edit">✏️</button>
-            <button class="btn action-btn btn-danger delete-att-btn" data-id="${Utils.escapeAttr(r.id)}" title="Delete">🗑️</button>
-          </div></td>
-        </tr>`;
+        html += `<div class="record-slidable-item" data-id="${Utils.escapeAttr(r.id)}">
+          <div class="record-slidable-content">
+            <label class="record-select-label"><input type="checkbox" class="record-select-cb" data-id="${Utils.escapeAttr(r.id)}"></label>
+            <span class="record-photo">${hasPhoto && safePhotoUrl ? `<img class="photo-thumb view-photo" src="${Utils.escapeAttr(safePhotoUrl)}" alt="selfie" data-id="${Utils.escapeAttr(r.id)}" style="cursor:pointer;" title="View photo">` : '<span style="color:var(--gray-300);font-size:0.75rem;">—</span>'}</span>
+            <span class="record-date">${Utils.escapeHtml(r.date)}</span>
+            <span class="record-time">${Utils.formatTime(r.timestamp)}</span>
+            <span class="record-name">${Utils.escapeHtml(r.name || '—')}</span>
+            <span class="record-action"><span style="color:${actionColor};font-weight:600;">${Utils.escapeHtml(r.action)}</span></span>
+            <span class="record-store">${Utils.escapeHtml(r.storeName || '—')}</span>
+            <span class="record-actions">
+              ${hasPhoto && safePhotoUrl ? `<button class="btn action-btn btn-outline view-photo-btn" data-id="${Utils.escapeAttr(r.id)}" title="View selfie">📷</button>` : ''}
+              <button class="btn action-btn btn-primary edit-att-btn" data-id="${Utils.escapeAttr(r.id)}" data-action="${Utils.escapeAttr(r.action)}" data-name="${Utils.escapeAttr(r.name || r.email)}" data-date="${Utils.escapeAttr(r.date)}" data-time="${Utils.escapeAttr(Utils.formatTime(r.timestamp))}" title="Edit">✏️</button>
+              <button class="btn action-btn btn-danger delete-att-btn" data-id="${Utils.escapeAttr(r.id)}" title="Delete">🗑️</button>
+            </span>
+          </div>
+        </div>`;
       });
+      html += '</div></td></tr>';
     });
     body.innerHTML = html;
+    // F2: Initialize slidable scroll to show 4 items at a time (with animation)
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.record-slidable').forEach(container => {
+        const items = container.querySelectorAll('.record-slidable-item');
+        if (items.length > 0) {
+          const itemHeight = items[0].offsetHeight || 44;
+          const targetHeight = Math.min(items.length, 4) * itemHeight;
+          container.style.maxHeight = '0px';
+          container.style.overflow = 'hidden';
+          requestAnimationFrame(() => {
+            container.style.transition = 'max-height 0.3s ease';
+            container.style.maxHeight = targetHeight + 'px';
+          });
+        }
+      });
+    });
+    document.getElementById('admin-attendance-foot').classList.add('hidden');
   },
   updatePagination() {
     const totalPages = Math.ceil(STATE.attendanceTotal / CONFIG.PAGE_SIZE);
@@ -1115,7 +1267,10 @@ const UI = {
     const todayStr = Utils.getToday();
     let detailHtml = '<table class="report-table"><thead><tr><th>Staff</th><th>Date</th><th>Status</th><th>Actions</th><th>Store</th></tr></thead><tbody>';
     let totalPresent = 0, totalAbsent = 0, totalWorking = 0, totalDays = 0;
+    // F7: Track per-staff present/absent counts
+    const staffStats = {};
     employeesToShow.forEach(emp => {
+      let empPresent = 0, empAbsent = 0, empWorking = 0, empTotal = 0;
       allDates.forEach(date => {
         // L1: String comparison works for YYYY-MM-DD format (lexicographically sortable)
         if (date > todayStr) return;
@@ -1123,10 +1278,10 @@ const UI = {
         const status = Utils.computeAttendanceStatus(dayRecords, emp.email);
         const statusLabel = status === 'present' ? 'Present' : status === 'absent' ? 'Absent' : 'Working';
         const statusClass = status === 'present' ? 'status-present' : status === 'absent' ? 'status-absent' : 'status-working';
-        if (status === 'present') totalPresent++;
-        else if (status === 'absent') totalAbsent++;
-        else totalWorking++;
-        totalDays++;
+        if (status === 'present') { totalPresent++; empPresent++; }
+        else if (status === 'absent') { totalAbsent++; empAbsent++; }
+        else { totalWorking++; empWorking++; }
+        totalDays++; empTotal++;
         let actionHtml = '—';
         if (dayRecords.length > 0) {
           const last = dayRecords[dayRecords.length - 1];
@@ -1137,10 +1292,21 @@ const UI = {
         const storeName = dayRecords.length > 0 ? (dayRecords[0].storeName || '—') : (Utils.getStoreName(emp.storeId) || '—');
         detailHtml += `<tr><td style="font-weight:600;font-size:0.8125rem;">${Utils.escapeHtml(emp.name || emp.email)}</td><td style="font-size:0.8125rem;">${Utils.escapeHtml(date)}</td><td><span class="${Utils.escapeAttr(statusClass)}">${Utils.escapeHtml(statusLabel)}</span></td><td>${actionHtml}</td><td style="font-size:0.75rem;color:var(--gray-500);">${Utils.escapeHtml(storeName)}</td></tr>`;
       });
+      staffStats[emp.email] = { name: emp.name || emp.email, present: empPresent, absent: empAbsent, working: empWorking, total: empTotal };
     });
     detailHtml += '</tbody></table>';
     const uniqueStaff = employeesToShow.length;
-    document.getElementById('report-popup-summary').innerHTML = `<strong>${uniqueStaff} employee(s)</strong> · ${totalDays} entries · <span class="status-present">${totalPresent} Present</span> · <span class="status-absent">${totalAbsent} Absent</span>` + (totalWorking > 0 ? ` · <span class="status-working">${totalWorking} Working</span>` : '');
+    // F7: Staff-wise status badges
+    let staffBadgesHtml = '';
+    if (employeesToShow.length > 1) {
+      staffBadgesHtml = '<div class="staff-status-badges" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">';
+      Object.values(staffStats).forEach(s => {
+        const badgeLabel = '👤 ' + Utils.escapeHtml(s.name) + ': ' + s.present + 'P ' + s.absent + 'A' + (s.working > 0 ? ' ' + s.working + 'W' : '');
+        staffBadgesHtml += '<span class="staff-status-badge" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:0.7rem;background:rgba(129,140,248,0.08);color:var(--gray-300);" title="' + Utils.escapeHtml(s.name) + '">' + badgeLabel + '</span>';
+      });
+      staffBadgesHtml += '</div>';
+    }
+    document.getElementById('report-popup-summary').innerHTML = `<strong>${uniqueStaff} employee(s)</strong> · ${totalDays} entries · <span class="status-present">${totalPresent} Present</span> · <span class="status-absent">${totalAbsent} Absent</span>` + (totalWorking > 0 ? ` · <span class="status-working">${totalWorking} Working</span>` : '') + staffBadgesHtml;
     body.innerHTML = detailHtml;
     body.querySelectorAll('.view-photo').forEach(el => {
       el.addEventListener('click', e => {
@@ -1200,6 +1366,43 @@ const UI = {
     STATE.calMonth++;
     if (STATE.calMonth > 12) { STATE.calMonth = 1; STATE.calYear++; }
     UI.renderCalendar();
+  },
+  // F6: Multi-select delete helpers
+  updateMultiDeleteBar() {
+    const count = STATE.selectedRecords ? STATE.selectedRecords.size : 0;
+    const foot = document.getElementById('admin-attendance-foot');
+    if (count > 0) {
+      foot.classList.remove('hidden');
+      document.getElementById('multi-delete-count').textContent = count;
+    } else {
+      foot.classList.add('hidden');
+    }
+  },
+  async multiDeleteRecords() {
+    if (!STATE.selectedRecords || STATE.selectedRecords.size === 0) return;
+    const count = STATE.selectedRecords.size;
+    if (!confirm('Delete ' + count + ' selected record(s)?')) return;
+    Utils.showLoading('Deleting records...');
+    let deleted = 0, failed = 0;
+    const ids = [...STATE.selectedRecords];
+    for (const id of ids) {
+      try {
+        await Firebase.db.collection('attendance').doc(id).delete();
+        deleted++;
+      } catch (e) {
+        failed++;
+      }
+    }
+    STATE.selectedRecords.clear();
+    document.getElementById('select-all-att').checked = false;
+    UI.updateMultiDeleteBar();
+    if (failed > 0) {
+      Utils.showToast('🗑️ ' + deleted + ' deleted, ' + failed + ' failed', 'warning');
+    } else {
+      Utils.showToast('🗑️ ' + deleted + ' record(s) deleted.', 'success');
+    }
+    DB.loadAllAttendance();
+    Utils.hideLoading();
   }
 };
 
@@ -1324,9 +1527,13 @@ const App = {
       if (!name) { Utils.showToast('Employee name is required', 'warning'); return; }
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { Utils.showToast('Valid email is required', 'warning'); return; }
       if (!storeId) { Utils.showToast('Please select a store', 'warning'); return; }
-      // M15: Check for duplicate email (for new employees only)
+      // M15: Check for duplicate email
       if (!STATE.editingEmpEmail && STATE.employees.some(e => e.email === email)) {
         Utils.showToast('Employee with this email already exists', 'warning'); return;
+      }
+      // F8: Check duplicate when changing email during edit
+      if (STATE.editingEmpEmail && email !== STATE.editingEmpEmail && STATE.employees.some(e => e.email === email)) {
+        Utils.showToast('Another employee with this email already exists', 'warning'); return;
       }
       if (STATE.editingEmpEmail) { DB.updateEmployee(STATE.editingEmpEmail, { name, email, storeId }); STATE.editingEmpEmail = null; }
       else { DB.addEmployee(name, email, storeId); }
@@ -1389,6 +1596,17 @@ const App = {
     document.getElementById('admin-password-input').addEventListener('keydown', e => { if (e.key === 'Enter') UI.handleAdminPwdSubmit(); });
     document.getElementById('admin-pwd-confirm').addEventListener('keydown', e => { if (e.key === 'Enter') UI.handleAdminPwdSubmit(); });
 
+    // F4: Forgot admin password — open reset modal
+    document.getElementById('admin-pwd-forgot-link').addEventListener('click', e => {
+      e.preventDefault();
+      UI.closeAdminPwdModal();
+      UI.showAdminResetModal();
+    });
+    document.getElementById('btn-admin-reset-submit').addEventListener('click', () => UI.handleAdminResetSubmit());
+    document.getElementById('btn-admin-reset-cancel').addEventListener('click', () => UI.closeAdminResetModal());
+    // F4: Live password requirement validation on reset form
+    document.getElementById('admin-reset-new-pwd').addEventListener('input', e => Utils.updatePasswordReqs(e.target.value, 'admin-reset-reqs'));
+
     document.getElementById('btn-close-photo').addEventListener('click', () => UI.closePhotoModal());
     document.getElementById('photo-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) UI.closePhotoModal(); });
     document.addEventListener('keydown', e => {
@@ -1397,6 +1615,7 @@ const App = {
         if (!document.getElementById('edit-modal-overlay').classList.contains('hidden')) UI.closeEditModal();
         if (!document.getElementById('report-overlay').classList.contains('hidden')) UI.closeReportPopup();
         if (!document.getElementById('admin-pwd-overlay').classList.contains('hidden')) UI.closeAdminPwdModal();
+        if (!document.getElementById('admin-reset-overlay').classList.contains('hidden')) UI.closeAdminResetModal();
         if (!document.getElementById('confirm-punch-overlay').classList.contains('hidden')) Staff.cancelPunchConfirm();
       }
     });
@@ -1434,6 +1653,36 @@ const App = {
       if (viewBtn || thumb) { const id = (viewBtn || thumb).dataset.id; UI.showPhotoModal(id); }
       if (editBtn) UI.showEditModal(editBtn.dataset.id);
       if (delBtn) DB.deleteAttendance(delBtn.dataset.id);
+    });
+
+    // F6: Multi-select — select all checkbox
+    document.getElementById('select-all-att').addEventListener('change', e => {
+      const checked = e.target.checked;
+      STATE.selectedRecords = STATE.selectedRecords || new Set();
+      document.querySelectorAll('.record-select-cb').forEach(cb => {
+        cb.checked = checked;
+        const id = cb.dataset.id;
+        if (checked) STATE.selectedRecords.add(id); else STATE.selectedRecords.delete(id);
+      });
+      UI.updateMultiDeleteBar();
+    });
+    // F6: Multi-select — individual checkbox (delegated)
+    document.getElementById('admin-attendance-body').addEventListener('change', e => {
+      if (!e.target.classList.contains('record-select-cb')) return;
+      const id = e.target.dataset.id;
+      STATE.selectedRecords = STATE.selectedRecords || new Set();
+      if (e.target.checked) STATE.selectedRecords.add(id); else STATE.selectedRecords.delete(id);
+      const allCbs = document.querySelectorAll('.record-select-cb');
+      document.getElementById('select-all-att').checked = allCbs.length > 0 && STATE.selectedRecords.size === allCbs.length;
+      UI.updateMultiDeleteBar();
+    });
+    // F6: Multi-select — delete selected
+    document.getElementById('btn-multi-delete').addEventListener('click', () => UI.multiDeleteRecords());
+    document.getElementById('btn-multi-cancel').addEventListener('click', () => {
+      STATE.selectedRecords.clear();
+      document.querySelectorAll('.record-select-cb').forEach(cb => cb.checked = false);
+      document.getElementById('select-all-att').checked = false;
+      UI.updateMultiDeleteBar();
     });
 
     // Edit-in-place: store inline editing
