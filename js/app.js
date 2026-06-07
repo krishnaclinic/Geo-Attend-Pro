@@ -18,6 +18,11 @@ const CONFIG = {
   }
 };
 
+const ADMIN_RESET_ACTION_CODE_SETTINGS = {
+  url: 'https://krishnaclinic.github.io/Geo-Attend-Pro/',
+  handleCodeInApp: true
+};
+
 const STATE = {
   firebaseUser: null,
   view: 'employee',
@@ -894,42 +899,79 @@ const UI = {
   closeAdminPwdModal() { document.getElementById('admin-pwd-overlay').classList.add('hidden'); },
   // F4: Admin password reset modal
   showAdminResetModal() {
-    document.getElementById('admin-reset-email').value = STATE.userEmail || '';
-    document.getElementById('admin-reset-firebase-pwd').value = '';
-    document.getElementById('admin-reset-new-pwd').value = '';
-    document.getElementById('admin-reset-confirm-pwd').value = '';
-    document.getElementById('admin-reset-reqs').querySelectorAll('.req').forEach(r => r.className = 'req');
+    document.getElementById('admin-reset-email').value = STATE.firebaseUser?.email || '';
     document.getElementById('admin-reset-overlay').classList.remove('hidden');
   },
   closeAdminResetModal() { document.getElementById('admin-reset-overlay').classList.add('hidden'); },
+  closeAdminResetSetModal() { document.getElementById('admin-reset-set-overlay').classList.add('hidden'); },
   async handleAdminResetSubmit() {
     const email = document.getElementById('admin-reset-email').value.trim();
-    const firebasePwd = document.getElementById('admin-reset-firebase-pwd').value;
-    const newPwd = document.getElementById('admin-reset-new-pwd').value;
-    const confirmPwd = document.getElementById('admin-reset-confirm-pwd').value;
-    if (!email || !firebasePwd || !newPwd || !confirmPwd) {
-      Utils.showToast('Fill in all fields', 'warning'); return;
-    }
+    if (!email) { Utils.showToast('Enter your email', 'warning'); return; }
+    if (!Firebase.auth) { Utils.showToast('Firebase not initialized', 'error'); return; }
+    Utils.showLoading('Sending reset link...');
+    try {
+      await Firebase.auth.sendSignInLinkToEmail(email, ADMIN_RESET_ACTION_CODE_SETTINGS);
+      try { localStorage.setItem('geoAttendPro_resetAdminEmail', email); } catch {}
+      Utils.showToast('Reset link sent! Check your inbox. 📧', 'success');
+      UI.closeAdminResetModal();
+    } catch (e) {
+      const msg = e.code === 'auth/user-not-found' ? 'No account with this email.' :
+                  e.code === 'auth/invalid-email' ? 'Invalid email address.' :
+                  e.code === 'auth/network-request-failed' ? 'Network error.' :
+                  e.code === 'auth/too-many-requests' ? 'Too many requests. Try again later.' : e.message;
+      Utils.showToast('Failed: ' + msg, 'error');
+    } finally { Utils.hideLoading(); }
+  },
+  async handleAdminResetSetSubmit() {
+    const newPwd = document.getElementById('admin-reset-set-new-pwd').value;
+    const confirmPwd = document.getElementById('admin-reset-set-confirm-pwd').value;
+    if (!newPwd || !confirmPwd) { Utils.showToast('Fill in all fields', 'warning'); return; }
     const { allMet } = Utils.validatePassword(newPwd);
     if (!allMet) { Utils.showToast('New password does not meet requirements', 'warning'); return; }
     if (newPwd !== confirmPwd) { Utils.showToast('Passwords do not match', 'warning'); return; }
-    Utils.showLoading('Verifying credentials & resetting password...');
+    Utils.showLoading('Setting new admin password...');
     try {
-      // Re-authenticate with Firebase credentials
-      const cred = await Firebase.auth.signInWithEmailAndPassword(email, firebasePwd);
-      // Set new admin password
       await Utils.setStoredAdminPassword(newPwd);
       Utils.showToast('Admin password reset successfully ✓', 'success');
-      UI.closeAdminResetModal();
+      UI.closeAdminResetSetModal();
+      try { localStorage.removeItem('geoAttendPro_resetAdminEmail'); } catch {}
       UI.enterAdminView();
     } catch (e) {
-      if (e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found') {
-        Utils.showToast('Incorrect email or Firebase password', 'error');
-      } else {
-        Utils.showToast('⚠️ Reset failed: ' + e.message, 'error');
-      }
+      Utils.showToast('Failed to set password: ' + e.message, 'error');
+    } finally { Utils.hideLoading(); }
+  },
+  // F4: Called on page load — detects if user arrived via admin reset email link
+  async processAdminResetLink() {
+    if (!Firebase.auth || !Firebase.auth.isSignInWithEmailLink(window.location.href)) return false;
+    const email = localStorage.getItem('geoAttendPro_resetAdminEmail');
+    if (!email) {
+      Utils.showToast('No email found for this reset link. Please restart the reset process.', 'error');
+      return false;
     }
-    Utils.hideLoading();
+    Utils.showLoading('Verifying reset link...');
+    try {
+      await Firebase.auth.signInWithEmailLink(email, window.location.href);
+      if (window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      try { localStorage.removeItem('geoAttendPro_resetAdminEmail'); } catch {}
+      Utils.showToast('Email verified! Please set your new admin password.', 'success');
+      document.getElementById('admin-reset-set-new-pwd').value = '';
+      document.getElementById('admin-reset-set-confirm-pwd').value = '';
+      document.getElementById('admin-reset-set-reqs').querySelectorAll('.req').forEach(r => r.className = 'req');
+      document.getElementById('admin-reset-set-overlay').classList.remove('hidden');
+      document.getElementById('admin-reset-set-new-pwd').focus();
+      Utils.hideLoading();
+      return true;
+    } catch (e) {
+      Utils.showToast('Invalid or expired reset link: ' + (e.message || e.code), 'error');
+      try { localStorage.removeItem('geoAttendPro_resetAdminEmail'); } catch {}
+      if (window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      Utils.hideLoading();
+      return false;
+    }
   },
   async handleAdminPwdSubmit() {
     const input = document.getElementById('admin-password-input');
@@ -1431,6 +1473,8 @@ const App = {
       hideLoading();
       document.getElementById('login-form').innerHTML = '<div class="msg-box"><p class="msg-box-title">❌ Firebase init failed</p><p class="msg-box-text">' + e.message + '</p></div>';
     }
+    // F4: Check if user arrived via admin reset email link (must run after Firebase.init)
+    UI.processAdminResetLink();
     // M13: Check online status on init
     Staff.checkOnline();
   },
@@ -1604,8 +1648,11 @@ const App = {
     });
     document.getElementById('btn-admin-reset-submit').addEventListener('click', () => UI.handleAdminResetSubmit());
     document.getElementById('btn-admin-reset-cancel').addEventListener('click', () => UI.closeAdminResetModal());
-    // F4: Live password requirement validation on reset form
-    document.getElementById('admin-reset-new-pwd').addEventListener('input', e => Utils.updatePasswordReqs(e.target.value, 'admin-reset-reqs'));
+    // F4: Set new admin password after reset link
+    document.getElementById('btn-admin-reset-set-submit').addEventListener('click', () => UI.handleAdminResetSetSubmit());
+    document.getElementById('btn-admin-reset-set-cancel').addEventListener('click', () => UI.closeAdminResetSetModal());
+    // F4: Live password requirement validation on reset-set form
+    document.getElementById('admin-reset-set-new-pwd').addEventListener('input', e => Utils.updatePasswordReqs(e.target.value, 'admin-reset-set-reqs'));
 
     document.getElementById('btn-close-photo').addEventListener('click', () => UI.closePhotoModal());
     document.getElementById('photo-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) UI.closePhotoModal(); });
@@ -1616,6 +1663,7 @@ const App = {
         if (!document.getElementById('report-overlay').classList.contains('hidden')) UI.closeReportPopup();
         if (!document.getElementById('admin-pwd-overlay').classList.contains('hidden')) UI.closeAdminPwdModal();
         if (!document.getElementById('admin-reset-overlay').classList.contains('hidden')) UI.closeAdminResetModal();
+        if (!document.getElementById('admin-reset-set-overlay').classList.contains('hidden')) UI.closeAdminResetSetModal();
         if (!document.getElementById('confirm-punch-overlay').classList.contains('hidden')) Staff.cancelPunchConfirm();
       }
     });
@@ -1839,6 +1887,7 @@ const App = {
     document.getElementById('login-email').value = '';
     document.getElementById('login-password').value = '';
     UI.closeAdminPwdModal();
+    UI.closeAdminResetSetModal();
     Staff.closeCamera();
   }
 };
