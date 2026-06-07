@@ -6,7 +6,7 @@ const CONFIG = {
   REMINDER_CHECK_INTERVAL: 60000,
   SHIFT_AUTO_CLOSE_HOURS: 24,
   REMINDER_HOURS_OPEN: 10,
-  DAILY_REMINDER_IN: '07:00',
+  DAILY_REMINDER_IN: '08:00',
   DAILY_REMINDER_OUT: '19:00',
   firebaseConfig: {
     apiKey: "AIzaSyBumdDi-oOOAoQauLnQDVHJcvbXvJ4nmu0",
@@ -1094,21 +1094,14 @@ const UI = {
       html += '</div></td></tr>';
     });
     body.innerHTML = html;
-    // Scrollable list — show 10 rows per staff group, scroll for more
+    // Single scrollable list — show 10 rows total, scroll for more
     requestAnimationFrame(() => {
-      document.querySelectorAll('.record-slidable').forEach(container => {
-        const items = container.querySelectorAll('.record-slidable-item');
-        if (items.length > 0) {
-          const itemHeight = items[0].offsetHeight || 44;
-          const targetHeight = Math.min(items.length, 10) * itemHeight;
-          container.style.maxHeight = '0px';
-          container.style.overflow = 'hidden';
-          requestAnimationFrame(() => {
-            container.style.transition = 'max-height 0.3s ease';
-            container.style.maxHeight = targetHeight + 'px';
-          });
-        }
-      });
+      const allRows = body.querySelectorAll('tr');
+      if (allRows.length > 0) {
+        const rowHeight = allRows[0].offsetHeight || 44;
+        body.style.maxHeight = (10 * rowHeight) + 'px';
+        body.style.overflowY = 'auto';
+      }
     });
     document.getElementById('admin-attendance-foot').classList.add('hidden');
   },
@@ -1323,25 +1316,24 @@ const UI = {
     const count = STATE.selectedRecords.size;
     if (!confirm('Delete ' + count + ' selected record(s)?')) return;
     Utils.showLoading('Deleting records...');
-    let deleted = 0, failed = 0;
-    const ids = [...STATE.selectedRecords];
-    for (const id of ids) {
-      try {
-        await Firebase.db.collection('attendance').doc(id).delete();
-        deleted++;
-      } catch (e) {
-        failed++;
+    try {
+      const ids = [...STATE.selectedRecords];
+      // Batch delete in chunks of 500 (Firestore limit)
+      for (let i = 0; i < ids.length; i += 500) {
+        const batch = Firebase.db.batch();
+        ids.slice(i, i + 500).forEach(id => {
+          batch.delete(Firebase.db.collection('attendance').doc(id));
+        });
+        await batch.commit();
       }
+      STATE.selectedRecords.clear();
+      document.getElementById('select-all-att').checked = false;
+      UI.updateMultiDeleteBar();
+      Utils.showToast('🗑️ ' + count + ' record(s) deleted.', 'success');
+      await DB.loadAllAttendance();
+    } catch (e) {
+      Utils.showToast('Delete failed: ' + e.message, 'error');
     }
-    STATE.selectedRecords.clear();
-    document.getElementById('select-all-att').checked = false;
-    UI.updateMultiDeleteBar();
-    if (failed > 0) {
-      Utils.showToast('🗑️ ' + deleted + ' deleted, ' + failed + ' failed', 'warning');
-    } else {
-      Utils.showToast('🗑️ ' + deleted + ' record(s) deleted.', 'success');
-    }
-    DB.loadAllAttendance();
     Utils.hideLoading();
   }
 };
