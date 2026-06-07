@@ -705,18 +705,24 @@ main { max-width: 56rem; margin: 0 auto; padding: 1.5rem 1rem; position: relativ
 .calendar-legend span { display: flex; align-items: center; gap: 0.375rem; }
 .calendar-legend .cal-dot { width: 10px; height: 10px; }
 
-/* F2: Slidable records — 10 visible, scrollable */
-.record-slidable {
-  max-height: 440px;
+/* F2: Scrollable records tbody — 10 rows visible, scroll for more */
+#admin-attendance-body {
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
-  border-radius: 6px;
-  background: rgba(0,0,0,0.15);
 }
-.record-slidable::-webkit-scrollbar { width: 4px; }
-.record-slidable::-webkit-scrollbar-track { background: transparent; }
-.record-slidable::-webkit-scrollbar-thumb { background: rgba(129,140,248,0.3); border-radius: 4px; }
+#admin-attendance-body::-webkit-scrollbar { width: 4px; }
+#admin-attendance-body::-webkit-scrollbar-track { background: transparent; }
+#admin-attendance-body::-webkit-scrollbar-thumb { background: rgba(129,140,248,0.3); border-radius: 4px; }
+.attendance-group-header td {
+  font-weight: 700;
+  font-size: 0.8125rem;
+  padding: 8px 8px;
+  color: var(--primary);
+  background: rgba(255,255,255,0.03);
+  border-bottom: 2px solid rgba(129,140,248,0.2);
+}
+/* Staff record card layout inside scrollable tbody */
 .record-slidable-item {
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
