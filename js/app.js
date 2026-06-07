@@ -1110,10 +1110,6 @@ const UI = {
         }
       });
     });
-        body.style.maxHeight = (visibleRows * rowHeight) + 'px';
-        body.style.overflowY = 'auto';
-      }
-    });
     document.getElementById('admin-attendance-foot').classList.add('hidden');
   },
   populateStoreDropdown() {
