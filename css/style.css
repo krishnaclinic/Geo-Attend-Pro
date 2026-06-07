@@ -705,9 +705,9 @@ main { max-width: 56rem; margin: 0 auto; padding: 1.5rem 1rem; position: relativ
 .calendar-legend span { display: flex; align-items: center; gap: 0.375rem; }
 .calendar-legend .cal-dot { width: 10px; height: 10px; }
 
-/* F2: Slidable records — 4 visible, scrollable */
+/* F2: Slidable records — 10 visible, scrollable */
 .record-slidable {
-  max-height: 180px;
+  max-height: 440px;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
