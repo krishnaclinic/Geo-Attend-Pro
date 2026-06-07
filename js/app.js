@@ -18,11 +18,6 @@ const CONFIG = {
   }
 };
 
-const ADMIN_RESET_ACTION_CODE_SETTINGS = {
-  url: 'https://krishnaclinic.github.io/Geo-Attend-Pro/',
-  handleCodeInApp: true
-};
-
 const STATE = {
   firebaseUser: null,
   view: 'employee',
@@ -469,29 +464,10 @@ const DB = {
       const snap = await Firebase.db.collection('attendance').orderBy('timestamp', 'desc').limit(5000).get();
       STATE.allAttendanceRaw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       STATE.attendanceTotal = STATE.allAttendanceRaw.length;
-      STATE.attendancePage = 0;
       STATE.filterActive = false;
-      DB.applyPage();
+      STATE.attendance = STATE.allAttendanceRaw;
+      if (STATE.view === 'admin') UI.renderAdminAttendance();
     } catch { STATE.allAttendanceRaw = []; STATE.attendance = []; }
-  },
-  applyPage() {
-    const start = STATE.attendancePage * CONFIG.PAGE_SIZE;
-    const end = start + CONFIG.PAGE_SIZE;
-    STATE.attendance = STATE.allAttendanceRaw.slice(start, end);
-    if (STATE.view === 'admin') UI.renderAdminAttendance();
-    UI.updatePagination();
-  },
-  nextPage() {
-    if ((STATE.attendancePage + 1) * CONFIG.PAGE_SIZE < STATE.attendanceTotal) {
-      STATE.attendancePage++;
-      DB.applyPage();
-    }
-  },
-  prevPage() {
-    if (STATE.attendancePage > 0) {
-      STATE.attendancePage--;
-      DB.applyPage();
-    }
   },
   async deleteAttendance(id) {
     if (!confirm('Delete this attendance record?')) return;
@@ -897,82 +873,6 @@ const UI = {
     document.getElementById('admin-password-input').focus();
   },
   closeAdminPwdModal() { document.getElementById('admin-pwd-overlay').classList.add('hidden'); },
-  // F4: Admin password reset modal
-  showAdminResetModal() {
-    document.getElementById('admin-reset-email').value = STATE.firebaseUser?.email || '';
-    document.getElementById('admin-reset-overlay').classList.remove('hidden');
-  },
-  closeAdminResetModal() { document.getElementById('admin-reset-overlay').classList.add('hidden'); },
-  closeAdminResetSetModal() { document.getElementById('admin-reset-set-overlay').classList.add('hidden'); },
-  async handleAdminResetSubmit() {
-    const email = document.getElementById('admin-reset-email').value.trim();
-    if (!email) { Utils.showToast('Enter your email', 'warning'); return; }
-    if (!Firebase.auth) { Utils.showToast('Firebase not initialized', 'error'); return; }
-    Utils.showLoading('Sending reset link...');
-    try {
-      await Firebase.auth.sendSignInLinkToEmail(email, ADMIN_RESET_ACTION_CODE_SETTINGS);
-      try { localStorage.setItem('geoAttendPro_resetAdminEmail', email); } catch {}
-      Utils.showToast('Reset link sent! Check your inbox. 📧', 'success');
-      UI.closeAdminResetModal();
-    } catch (e) {
-      const msg = e.code === 'auth/user-not-found' ? 'No account with this email.' :
-                  e.code === 'auth/invalid-email' ? 'Invalid email address.' :
-                  e.code === 'auth/network-request-failed' ? 'Network error.' :
-                  e.code === 'auth/too-many-requests' ? 'Too many requests. Try again later.' : e.message;
-      Utils.showToast('Failed: ' + msg, 'error');
-    } finally { Utils.hideLoading(); }
-  },
-  async handleAdminResetSetSubmit() {
-    const newPwd = document.getElementById('admin-reset-set-new-pwd').value;
-    const confirmPwd = document.getElementById('admin-reset-set-confirm-pwd').value;
-    if (!newPwd || !confirmPwd) { Utils.showToast('Fill in all fields', 'warning'); return; }
-    const { allMet } = Utils.validatePassword(newPwd);
-    if (!allMet) { Utils.showToast('New password does not meet requirements', 'warning'); return; }
-    if (newPwd !== confirmPwd) { Utils.showToast('Passwords do not match', 'warning'); return; }
-    Utils.showLoading('Setting new admin password...');
-    try {
-      await Utils.setStoredAdminPassword(newPwd);
-      Utils.showToast('Admin password reset successfully ✓', 'success');
-      UI.closeAdminResetSetModal();
-      try { localStorage.removeItem('geoAttendPro_resetAdminEmail'); } catch {}
-      UI.enterAdminView();
-    } catch (e) {
-      Utils.showToast('Failed to set password: ' + e.message, 'error');
-    } finally { Utils.hideLoading(); }
-  },
-  // F4: Called on page load — detects if user arrived via admin reset email link
-  async processAdminResetLink() {
-    if (!Firebase.auth || !Firebase.auth.isSignInWithEmailLink(window.location.href)) return false;
-    const email = localStorage.getItem('geoAttendPro_resetAdminEmail');
-    if (!email) {
-      Utils.showToast('No email found for this reset link. Please restart the reset process.', 'error');
-      return false;
-    }
-    Utils.showLoading('Verifying reset link...');
-    try {
-      await Firebase.auth.signInWithEmailLink(email, window.location.href);
-      if (window.history.replaceState) {
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-      try { localStorage.removeItem('geoAttendPro_resetAdminEmail'); } catch {}
-      Utils.showToast('Email verified! Please set your new admin password.', 'success');
-      document.getElementById('admin-reset-set-new-pwd').value = '';
-      document.getElementById('admin-reset-set-confirm-pwd').value = '';
-      document.getElementById('admin-reset-set-reqs').querySelectorAll('.req').forEach(r => r.className = 'req');
-      document.getElementById('admin-reset-set-overlay').classList.remove('hidden');
-      document.getElementById('admin-reset-set-new-pwd').focus();
-      Utils.hideLoading();
-      return true;
-    } catch (e) {
-      Utils.showToast('Invalid or expired reset link: ' + (e.message || e.code), 'error');
-      try { localStorage.removeItem('geoAttendPro_resetAdminEmail'); } catch {}
-      if (window.history.replaceState) {
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-      Utils.hideLoading();
-      return false;
-    }
-  },
   async handleAdminPwdSubmit() {
     const input = document.getElementById('admin-password-input');
     const password = input.value;
@@ -1146,12 +1046,16 @@ const UI = {
     if (to) filtered = filtered.filter(r => r.date <= to);
     if (staffEmail) filtered = filtered.filter(r => r.email === staffEmail);
     STATE.filterActive = !!(from || to || staffEmail);
-    document.getElementById('filter-result-count').textContent = `${STATE.attendancePage * CONFIG.PAGE_SIZE + 1}-${Math.min((STATE.attendancePage + 1) * CONFIG.PAGE_SIZE, STATE.attendanceTotal)} of ${STATE.attendanceTotal} records`;
-    if (filtered.length === 0) {
+    const total = filtered.length;
+    document.getElementById('filter-result-count').textContent = total > 0 ? `${total} records` : 'No records';
+    if (total === 0) {
       body.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--gray-400);padding:1rem;">No records</td></tr>';
+      body.style.maxHeight = '';
+      body.style.overflow = '';
       document.getElementById('admin-attendance-foot').classList.add('hidden');
       return;
     }
+    // Group by staff, sort groups alphabetically
     const grouped = {};
     filtered.forEach(r => { const key = r.email || 'unknown'; if (!grouped[key]) grouped[key] = []; grouped[key].push(r); });
     const sortedEmails = Object.keys(grouped).sort();
@@ -1162,8 +1066,9 @@ const UI = {
     sortedEmails.forEach(email => {
       const recs = grouped[email].sort((a, b) => (b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0));
       const staffName = recs[0].name || email;
+      // Staff group header row
       html += `<tr class="attendance-group-header"><td colspan="8">👤 ${Utils.escapeHtml(staffName)} (${recs.length} records)</td></tr>`;
-      // F2: Slidable — wrap records in a scrollable container showing 4 at a time
+      // Individual records wrapped in a scrollable container (10 visible)
       html += `<tr><td colspan="8"><div class="record-slidable" data-staff="${Utils.escapeAttr(email)}">`;
       recs.forEach(r => {
         const hasPhoto = !!(r.photo && r.photo.length > 100);
@@ -1189,13 +1094,13 @@ const UI = {
       html += '</div></td></tr>';
     });
     body.innerHTML = html;
-    // F2: Initialize slidable scroll to show 4 items at a time (with animation)
+    // Scrollable list — show 10 rows per staff group, scroll for more
     requestAnimationFrame(() => {
       document.querySelectorAll('.record-slidable').forEach(container => {
         const items = container.querySelectorAll('.record-slidable-item');
         if (items.length > 0) {
           const itemHeight = items[0].offsetHeight || 44;
-          const targetHeight = Math.min(items.length, 4) * itemHeight;
+          const targetHeight = Math.min(items.length, 10) * itemHeight;
           container.style.maxHeight = '0px';
           container.style.overflow = 'hidden';
           requestAnimationFrame(() => {
@@ -1205,14 +1110,11 @@ const UI = {
         }
       });
     });
+        body.style.maxHeight = (visibleRows * rowHeight) + 'px';
+        body.style.overflowY = 'auto';
+      }
+    });
     document.getElementById('admin-attendance-foot').classList.add('hidden');
-  },
-  updatePagination() {
-    const totalPages = Math.ceil(STATE.attendanceTotal / CONFIG.PAGE_SIZE);
-    const controls = document.getElementById('pagination-controls');
-    if (totalPages <= 1 && !STATE.filterActive) { controls.classList.add('hidden'); return; }
-    controls.classList.remove('hidden');
-    document.getElementById('page-info').textContent = `Page ${STATE.attendancePage + 1} of ${Math.max(1, totalPages)}`;
   },
   populateStoreDropdown() {
     const select = document.getElementById('input-emp-store');
@@ -1473,8 +1375,6 @@ const App = {
       hideLoading();
       document.getElementById('login-form').innerHTML = '<div class="msg-box"><p class="msg-box-title">❌ Firebase init failed</p><p class="msg-box-text">' + e.message + '</p></div>';
     }
-    // F4: Check if user arrived via admin reset email link (must run after Firebase.init)
-    UI.processAdminResetLink();
     // M13: Check online status on init
     Staff.checkOnline();
   },
@@ -1640,20 +1540,6 @@ const App = {
     document.getElementById('admin-password-input').addEventListener('keydown', e => { if (e.key === 'Enter') UI.handleAdminPwdSubmit(); });
     document.getElementById('admin-pwd-confirm').addEventListener('keydown', e => { if (e.key === 'Enter') UI.handleAdminPwdSubmit(); });
 
-    // F4: Forgot admin password — open reset modal
-    document.getElementById('admin-pwd-forgot-link').addEventListener('click', e => {
-      e.preventDefault();
-      UI.closeAdminPwdModal();
-      UI.showAdminResetModal();
-    });
-    document.getElementById('btn-admin-reset-submit').addEventListener('click', () => UI.handleAdminResetSubmit());
-    document.getElementById('btn-admin-reset-cancel').addEventListener('click', () => UI.closeAdminResetModal());
-    // F4: Set new admin password after reset link
-    document.getElementById('btn-admin-reset-set-submit').addEventListener('click', () => UI.handleAdminResetSetSubmit());
-    document.getElementById('btn-admin-reset-set-cancel').addEventListener('click', () => UI.closeAdminResetSetModal());
-    // F4: Live password requirement validation on reset-set form
-    document.getElementById('admin-reset-set-new-pwd').addEventListener('input', e => Utils.updatePasswordReqs(e.target.value, 'admin-reset-set-reqs'));
-
     document.getElementById('btn-close-photo').addEventListener('click', () => UI.closePhotoModal());
     document.getElementById('photo-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) UI.closePhotoModal(); });
     document.addEventListener('keydown', e => {
@@ -1662,8 +1548,6 @@ const App = {
         if (!document.getElementById('edit-modal-overlay').classList.contains('hidden')) UI.closeEditModal();
         if (!document.getElementById('report-overlay').classList.contains('hidden')) UI.closeReportPopup();
         if (!document.getElementById('admin-pwd-overlay').classList.contains('hidden')) UI.closeAdminPwdModal();
-        if (!document.getElementById('admin-reset-overlay').classList.contains('hidden')) UI.closeAdminResetModal();
-        if (!document.getElementById('admin-reset-set-overlay').classList.contains('hidden')) UI.closeAdminResetSetModal();
         if (!document.getElementById('confirm-punch-overlay').classList.contains('hidden')) Staff.cancelPunchConfirm();
       }
     });
@@ -1690,10 +1574,6 @@ const App = {
     document.getElementById('btn-cal-prev').addEventListener('click', () => UI.calPrevMonth());
     document.getElementById('btn-cal-next').addEventListener('click', () => UI.calNextMonth());
     document.getElementById('cal-staff-filter').addEventListener('change', () => UI.renderCalendar());
-
-    // Pagination
-    document.getElementById('btn-prev-page').addEventListener('click', () => DB.prevPage());
-    document.getElementById('btn-next-page').addEventListener('click', () => DB.nextPage());
 
     // Delegated events for attendance table
     document.getElementById('admin-attendance-body').addEventListener('click', e => {
@@ -1887,7 +1767,6 @@ const App = {
     document.getElementById('login-email').value = '';
     document.getElementById('login-password').value = '';
     UI.closeAdminPwdModal();
-    UI.closeAdminResetSetModal();
     Staff.closeCamera();
   }
 };
