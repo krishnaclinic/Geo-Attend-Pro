@@ -436,23 +436,28 @@
       </div>
     </div>
 
-    <!-- F4: Admin Password Reset Modal -->
+    <!-- F4: Admin Password Reset Modal — Step 1: Send Reset Link -->
     <div id="admin-reset-overlay" class="modal-overlay hidden">
       <div class="pwd-modal-inner">
         <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:0.25rem;color:var(--gray-800);">🔑 Reset Admin Password</h3>
-        <p style="font-size:0.875rem;color:var(--gray-500);margin-bottom:1rem;">Enter your account email and Firebase password to reset the admin access password.</p>
+        <p id="admin-reset-desc" style="font-size:0.875rem;color:var(--gray-500);margin-bottom:1rem;">Enter the email for your account. We'll send a secure reset link.</p>
         <div class="form-group">
           <label for="admin-reset-email">Email</label>
           <input id="admin-reset-email" class="form-input" type="email" placeholder="Your account email">
         </div>
-        <div class="form-group">
-          <label for="admin-reset-firebase-pwd">Firebase Password</label>
-          <div class="password-wrapper">
-            <input id="admin-reset-firebase-pwd" class="form-input" type="password" placeholder="Your Firebase password">
-            <button type="button" class="password-toggle" data-target="admin-reset-firebase-pwd" tabindex="-1" aria-label="Toggle password visibility">👁</button>
-          </div>
+        <div class="flex gap-2" style="margin-top:0.75rem;">
+          <button id="btn-admin-reset-submit" class="btn btn-primary flex-1">Send Reset Link</button>
+          <button id="btn-admin-reset-cancel" class="btn btn-ghost">Cancel</button>
         </div>
-        <div class="password-requirements" id="admin-reset-reqs" style="margin-top:0.75rem;">
+      </div>
+    </div>
+
+    <!-- F4: Admin Password Reset Modal — Step 2: Set New Password (shown after link clicked) -->
+    <div id="admin-reset-set-overlay" class="modal-overlay hidden">
+      <div class="pwd-modal-inner">
+        <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:0.25rem;color:var(--gray-800);">🔐 Set New Admin Password</h3>
+        <p style="font-size:0.875rem;color:var(--gray-500);margin-bottom:1rem;">You've verified your email. Enter a new admin password below.</p>
+        <div class="password-requirements" id="admin-reset-set-reqs" style="margin-top:0.75rem;">
           <div class="req-title">New admin password must contain:</div>
           <div class="req" data-req="min">✕ At least 8 characters</div>
           <div class="req" data-req="upper">✕ At least 1 uppercase letter</div>
@@ -461,28 +466,28 @@
           <div class="req" data-req="special">✕ At least 1 special character</div>
         </div>
         <div class="form-group" style="margin-top:0.75rem;">
-          <label for="admin-reset-new-pwd">New Admin Password</label>
+          <label for="admin-reset-set-new-pwd">New Admin Password</label>
           <div class="password-wrapper">
-            <input id="admin-reset-new-pwd" class="form-input" type="password" placeholder="Enter new admin password">
-            <button type="button" class="password-toggle" data-target="admin-reset-new-pwd" tabindex="-1" aria-label="Toggle password visibility">👁</button>
+            <input id="admin-reset-set-new-pwd" class="form-input" type="password" placeholder="Enter new admin password">
+            <button type="button" class="password-toggle" data-target="admin-reset-set-new-pwd" tabindex="-1" aria-label="Toggle password visibility">👁</button>
           </div>
         </div>
         <div class="form-group">
-          <label for="admin-reset-confirm-pwd">Confirm New Admin Password</label>
+          <label for="admin-reset-set-confirm-pwd">Confirm New Admin Password</label>
           <div class="password-wrapper">
-            <input id="admin-reset-confirm-pwd" class="form-input" type="password" placeholder="Repeat new admin password">
-            <button type="button" class="password-toggle" data-target="admin-reset-confirm-pwd" tabindex="-1" aria-label="Toggle password visibility">👁</button>
+            <input id="admin-reset-set-confirm-pwd" class="form-input" type="password" placeholder="Repeat new admin password">
+            <button type="button" class="password-toggle" data-target="admin-reset-set-confirm-pwd" tabindex="-1" aria-label="Toggle password visibility">👁</button>
           </div>
         </div>
         <div class="flex gap-2" style="margin-top:0.75rem;">
-          <button id="btn-admin-reset-submit" class="btn btn-primary flex-1">Reset Password</button>
-          <button id="btn-admin-reset-cancel" class="btn btn-ghost">Cancel</button>
+          <button id="btn-admin-reset-set-submit" class="btn btn-primary flex-1">Set Password</button>
+          <button id="btn-admin-reset-set-cancel" class="btn btn-ghost">Cancel</button>
         </div>
       </div>
     </div>
 
   </main>
 
-  <script src="js/app.js?v=2.2"></script>
+  <script src="js/app.js?v=2.3"></script>
 </body>
 </html>
