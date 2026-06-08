@@ -1094,14 +1094,16 @@ const UI = {
       html += '</div></td></tr>';
     });
     body.innerHTML = html;
-    // Single scrollable list — show 10 rows total, scroll for more
+    // Each staff group gets its own scrollable container — 5 visible rows
     requestAnimationFrame(() => {
-      const allRows = body.querySelectorAll('tr');
-      if (allRows.length > 0) {
-        const rowHeight = allRows[0].offsetHeight || 44;
-        body.style.maxHeight = (10 * rowHeight) + 'px';
-        body.style.overflowY = 'auto';
-      }
+      document.querySelectorAll('.record-slidable').forEach(container => {
+        const items = container.querySelectorAll('.record-slidable-item');
+        if (items.length > 0) {
+          const itemHeight = items[0].offsetHeight || 44;
+          container.style.maxHeight = (Math.min(items.length, 5) * itemHeight) + 'px';
+          container.style.overflowY = 'auto';
+        }
+      });
     });
     document.getElementById('admin-attendance-foot').classList.add('hidden');
   },
